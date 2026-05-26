@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import hypot
 from typing import Iterable
+
+import numpy as np
+
+from ..core.layers import GridMap
+from ..mapping.constraints import ConstraintResult
+from ..path_planning import astar_path
+from ..platforms import PlatformParameters
 
 
 @dataclass(frozen=True)
@@ -39,6 +47,110 @@ def _normalize(values: tuple[float, ...]) -> tuple[float, ...]:
     if maximum <= 0.0:
         return tuple(0.0 for _ in values)
     return tuple(max(value, 0.0) / maximum for value in values)
+
+
+def _layer_or_default(grid: GridMap, name: str, default: float) -> np.ndarray:
+    if name in grid.layers:
+        return np.nan_to_num(np.asarray(grid.layers[name], dtype=float), nan=default)
+    return np.full(grid.shape, default, dtype=float)
+
+
+def _candidate_risk(grid: GridMap, platform: PlatformParameters) -> np.ndarray:
+    slope = _layer_or_default(grid, "slope", platform.max_slope_deg)
+    roughness = _layer_or_default(grid, "roughness", 1.0)
+    obstacle = _layer_or_default(grid, "obstacle", 1.0)
+    illumination = _layer_or_default(grid, "illumination", 0.0)
+    confidence = _layer_or_default(grid, "confidence", 0.0)
+    slope_risk = np.clip(slope / max(platform.max_slope_deg, 1e-9), 0.0, 1.0)
+    roughness_risk = np.clip(roughness, 0.0, 1.0)
+    obstacle_risk = np.clip(obstacle, 0.0, 1.0)
+    illumination_risk = np.clip(1.0 - illumination, 0.0, 1.0)
+    confidence_risk = np.clip(1.0 - confidence, 0.0, 1.0)
+    return np.clip(0.30 * slope_risk + 0.20 * roughness_risk + 0.25 * obstacle_risk + 0.15 * illumination_risk + 0.10 * confidence_risk, 0.0, 1.0)
+
+
+def _frontier_score(valid: np.ndarray, passable: np.ndarray) -> np.ndarray:
+    blocked_or_invalid = (~valid) | (~passable)
+    frontier = np.zeros(valid.shape, dtype=float)
+    height, width = valid.shape
+    for y in range(height):
+        for x in range(width):
+            y0, y1 = max(0, y - 1), min(height, y + 2)
+            x0, x1 = max(0, x - 1), min(width, x + 2)
+            if blocked_or_invalid[y0:y1, x0:x1].any():
+                frontier[y, x] = 1.0
+    return frontier
+
+
+def generate_exploration_candidates(
+    grid: GridMap,
+    constraints: ConstraintResult,
+    start: tuple[int, int],
+    platform: PlatformParameters,
+    *,
+    max_candidates: int = 8,
+) -> tuple[CandidateGoal, ...]:
+    """从地图层生成离散探索候选点，供效用排序复用。"""
+
+    if max_candidates <= 0:
+        return tuple()
+    sx, sy = start
+    if not (0 <= sx < grid.width and 0 <= sy < grid.height):
+        raise ValueError("start must be inside the grid")
+
+    valid = grid.layers.get("valid_mask", np.ones(grid.shape, dtype=bool)).astype(bool, copy=False)
+    passable = np.asarray(constraints.passable_mask, dtype=bool)
+    if passable.shape != grid.shape:
+        raise ValueError("constraints passable_mask shape must match grid shape")
+
+    confidence = np.clip(_layer_or_default(grid, "confidence", 0.0), 0.0, 1.0)
+    value = np.clip(_layer_or_default(grid, "value", 0.0), 0.0, 1.0)
+    confidence_gain = np.clip(1.0 - confidence, 0.0, 1.0)
+    risk = _candidate_risk(grid, platform)
+    frontier = _frontier_score(valid, passable)
+    seed_score = np.where(
+        valid,
+        0.40 * confidence_gain + 0.35 * value + 0.15 * frontier + 0.10 * (1.0 - risk),
+        -1.0,
+    )
+
+    flat_order = np.argsort(seed_score.ravel())[::-1]
+    candidates: list[CandidateGoal] = []
+    seen: set[tuple[int, int]] = set()
+    cost = grid.layers.get("cost")
+    for flat_index in flat_order:
+        if len(candidates) >= max_candidates:
+            break
+        y, x = np.unravel_index(int(flat_index), grid.shape)
+        cell = (int(x), int(y))
+        if cell in seen or seed_score[y, x] <= 0.0:
+            continue
+        seen.add(cell)
+        reachable = False
+        path_cost = hypot(x - sx, y - sy) * grid.resolution
+        if cost is not None and passable[sy, sx] and passable[y, x]:
+            plan = astar_path(np.asarray(cost, dtype=float), passable, start, cell, grid.resolution)
+            reachable = plan.reachable
+            if plan.reachable:
+                path_cost = float(plan.total_cost)
+            else:
+                path_cost += grid.width * grid.height * grid.resolution
+        else:
+            path_cost += grid.width * grid.height * grid.resolution
+
+        candidates.append(
+            CandidateGoal(
+                cell=cell,
+                information_gain=float(np.clip(0.7 * confidence_gain[y, x] + 0.3 * frontier[y, x], 0.0, 1.0)),
+                value=float(value[y, x]),
+                confidence_gain=float(confidence_gain[y, x]),
+                risk=float(risk[y, x]),
+                path_cost=float(path_cost),
+                energy_cost=float(path_cost * (1.0 + risk[y, x])),
+                reachable=reachable,
+            )
+        )
+    return tuple(candidates)
 
 
 def rank_exploration_goals(

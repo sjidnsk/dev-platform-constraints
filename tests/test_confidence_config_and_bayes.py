@@ -11,6 +11,7 @@ from dev_platform_constraints.confidence import (
     derive_confidence_from_posterior,
     load_confidence_weights,
     update_obstacle_posterior,
+    update_traversability_posterior,
 )
 
 
@@ -90,6 +91,31 @@ class ConfidenceConfigAndBayesTests(unittest.TestCase):
         self.assertGreater(float(confidence.values[0, 0]), float(confidence.values[0, 1]))
         self.assertGreater(float(confidence.values[0, 2]), float(confidence.values[0, 1]))
         self.assertAlmostEqual(float(confidence.values[0, 1]), 0.0)
+
+    def test_traversability_posterior_moves_with_observations_and_skips_invalid_cells(self) -> None:
+        prior = np.array([[0.3, 0.7], [0.2, 0.8]])
+        observed = np.array([[0.9, 0.1], [0.8, 0.2]])
+        quality = np.array([[0.9, 0.9], [1.0, 1.0]])
+        valid = np.array([[True, True], [True, False]])
+
+        posterior = update_traversability_posterior(prior, observed, quality, valid_mask=valid)
+
+        self.assertEqual(posterior.name, "traversable")
+        self.assertGreater(float(posterior.values[0, 0]), float(prior[0, 0]))
+        self.assertLess(float(posterior.values[0, 1]), float(prior[0, 1]))
+        self.assertGreater(float(posterior.values[1, 0]), float(prior[1, 0]))
+        self.assertFalse(bool(posterior.valid_mask[1, 1]))
+        self.assertAlmostEqual(float(posterior.values[1, 1]), float(prior[1, 1]))
+
+    def test_conflicting_traversability_observation_lowers_derived_confidence(self) -> None:
+        prior = np.full((1, 2), 0.9)
+        agreeing = update_traversability_posterior(prior, np.array([[0.9, 0.9]]), np.ones((1, 2)))
+        conflicting = update_traversability_posterior(prior, np.array([[0.1, 0.1]]), np.ones((1, 2)))
+
+        agreeing_confidence = derive_confidence_from_posterior(agreeing)
+        conflicting_confidence = derive_confidence_from_posterior(conflicting)
+
+        self.assertLess(float(conflicting_confidence.values[0, 0]), float(agreeing_confidence.values[0, 0]))
 
 
 if __name__ == "__main__":

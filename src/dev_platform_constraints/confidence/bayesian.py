@@ -26,6 +26,29 @@ def update_obstacle_posterior(
 ) -> BayesianStateLayer:
     """用简化 log-odds 形式更新障碍概率后验。"""
 
+    return _update_probability_posterior("obstacle", prior, observation, observation_confidence, valid_mask)
+
+
+def update_traversability_posterior(
+    prior: np.ndarray,
+    observation: np.ndarray,
+    observation_confidence: np.ndarray,
+    valid_mask: np.ndarray | None = None,
+) -> BayesianStateLayer:
+    """用简化 log-odds 形式更新通行概率后验。"""
+
+    return _update_probability_posterior("traversable", prior, observation, observation_confidence, valid_mask)
+
+
+def _update_probability_posterior(
+    name: str,
+    prior: np.ndarray,
+    observation: np.ndarray,
+    observation_confidence: np.ndarray,
+    valid_mask: np.ndarray | None = None,
+) -> BayesianStateLayer:
+    """更新一个 0 到 1 概率状态层，保持状态估计与可信度派生分离。"""
+
     prior_array = _clip_probability(prior)
     observation_array = _clip_probability(observation)
     quality = np.clip(np.asarray(observation_confidence, dtype=float), 0.0, 1.0)
@@ -44,7 +67,7 @@ def update_obstacle_posterior(
     posterior = prior_array.copy()
     updated_logit = prior_logit + quality * observation_logit
     posterior[valid] = 1.0 / (1.0 + np.exp(-updated_logit[valid]))
-    return BayesianStateLayer(name="obstacle", values=np.clip(posterior, 0.0, 1.0), valid_mask=valid)
+    return BayesianStateLayer(name=name, values=np.clip(posterior, 0.0, 1.0), valid_mask=valid)
 
 
 def derive_confidence_from_posterior(posterior: BayesianStateLayer) -> ConfidenceComponent:

@@ -17,15 +17,15 @@
 - 基础非负 `cost` 输出，以及与 `confidence` 分离的 `traversability` 输出。
 - 用 A* 验证最小闭环路径是否可达。
 
-当前 P1 实现可解释的可信度分量、配置化融合、一次局部观测更新、数据契约报告和障碍概率贝叶斯后验边界；
+当前 P1 实现可解释的可信度分量、配置化融合、一次局部观测更新、数据契约报告、障碍概率与通行概率贝叶斯后验边界；
 暂不实现复杂遮挡、高级观测调度或风险传播。`confidence` 表示信息可靠程度，不等同于
 `traversability`。`value` 默认视为科学或任务效用，不进入通行代价，除非后续实验显式启用价值奖励权重。
 
 ## 开发状态
 
 - P0：已完成，包含栅格数据契约、地形特征、平台配置、硬约束、非负代价图和 A* 最小闭环。
-- P1：部分完成，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告和最小贝叶斯障碍后验。
-- P2：已提供离散候选观测目标排序起点；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
+- P1：部分完成，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、可信度权重消融脚本和最小贝叶斯状态后验。
+- P2：已提供离散候选观测目标生成与排序起点；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
 - 生成数据：scripts/generate_example_data.py 是生成型脚本，用于刷新开发示例数据，不是核心运行依赖；生成的 `data/sample_grid.npz` 不提交版本库。
 
 `src/dev_platform_constraints/` 按职责分为：
@@ -33,8 +33,8 @@
 - `core/`：栅格地图数据结构、图层元数据和数据契约校验。
 - `platforms/`：平台参数模型、配置加载和默认配置路径。
 - `terrain/`：坡度、崎岖度等地形特征派生。
-- `confidence/`：可信度分量计算、加权融合和局部观测更新。
-- `exploration/`：候选观测目标效用评分和排序。
+- `confidence/`：可信度分量计算、加权融合、局部观测更新和最小贝叶斯状态后验。
+- `exploration/`：候选观测目标生成、效用评分和排序。
 - `mapping/`：硬约束掩膜、原因位图和通行代价图生成。
 - `path_planning/`：A* 等路径规划算法。
 - `sample_data/`：开发示例地图生成。
@@ -48,6 +48,7 @@
 $env:PYTHONPATH='src'
 python -m unittest discover -s tests
 python scripts\run_minimal_closure.py
+python scripts\run_confidence_ablation.py --output-dir outputs\ablation
 python scripts\generate_example_data.py
 ```
 
@@ -55,6 +56,7 @@ python scripts\generate_example_data.py
 
 - 单元测试输出 `OK`。
 - `scripts\run_minimal_closure.py` 输出 JSON 摘要，其中 `validation_valid` 和 `path_reachable` 均为 `true`，并包含 `data_contract`、`confidence_delta_c`、低可信区域面积和局部观测更新指标。
+- `scripts\run_confidence_ablation.py` 输出 JSON/CSV 数据报告和 HTML/PNG 可视化报告，比较不同可信度权重对路径代价、`ΔC`、低可信高风险路径比例和 Top-K 探索目标排序的影响。
 - `scripts\generate_example_data.py` 写入 `data/sample_grid.npz`，输出写入路径和图层列表。
 
 ## 运行
@@ -91,6 +93,7 @@ bash scripts/setup_env.sh --dry-run --run-validation
 $env:PYTHONPATH='src'
 python -m unittest discover -s tests
 python scripts\run_minimal_closure.py
+python scripts\run_confidence_ablation.py --output-dir outputs\ablation
 python scripts\generate_example_data.py
 ```
 
@@ -111,6 +114,7 @@ python scripts\visualize_minimal_closure.py --output-dir outputs\visualization -
 - 地图与代价摘要：栅格尺寸、分辨率和可通行代价范围。
 - 可信度更新摘要：更新前后平均可信度、低可信区域面积、`ΔC`、可见栅格数和已更新栅格数。
 - 数据契约摘要：图层数量、缺失核心图层数、契约错误数和契约警告数。
+- 探索目标摘要：Top-K 候选目标的栅格、效用、可达性、信息增益、价值、可信度提升、风险和路径代价。
 - 约束原因计数：无效、坡度、障碍、障碍高度和禁行区触发次数。
 
 最小闭环脚本会执行：
@@ -123,7 +127,21 @@ python scripts\visualize_minimal_closure.py --output-dir outputs\visualization -
 6. 生成硬约束掩膜。
 7. 生成非负 `cost` 和独立的 `traversability`。
 8. 运行 A* 验证起终点可达性。
-9. 输出 JSON 摘要和数据契约报告。
+9. 生成候选探索目标并按效用排序。
+10. 输出 JSON 摘要、数据契约报告和 Top-K 探索目标。
+
+运行可信度权重消融实验：
+
+```powershell
+$env:PYTHONPATH='src'
+python scripts\run_confidence_ablation.py --output-dir outputs\ablation
+```
+
+默认会比较 `configs\confidence\default.json`、`configs\confidence\observation_focused.json`
+和 `configs\confidence\consistency_recency_focused.json`，并写入
+`outputs\ablation\confidence_ablation.json`、`outputs\ablation\confidence_ablation.csv`、
+`outputs\ablation\confidence_ablation.png` 和 `outputs\ablation\confidence_ablation.html`。
+HTML 报告展示路径总代价、可信度正向提升总量、更新后低可信区域面积、低可信高风险路径比例和 Top-K 探索目标。
 
 `scripts/generate_example_data.py` 会写入 `data/sample_grid.npz`，其中包含开发用示例图层。
 该文件由脚本生成，不作为核心运行依赖或版本库输入。

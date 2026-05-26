@@ -14,6 +14,7 @@ class PackageStructureTests(unittest.TestCase):
             fuse_confidence,
             load_confidence_weights,
             update_obstacle_posterior,
+            update_traversability_posterior,
             update_confidence_from_observation,
         )
         from dev_platform_constraints.core import CORE_LAYERS, GridMap, LayerMetadata, validate_grid_map
@@ -23,7 +24,7 @@ class PackageStructureTests(unittest.TestCase):
         from dev_platform_constraints.reporting import build_data_contract_report, render_closure_report
         from dev_platform_constraints.sample_data import generate_sample_grid
         from dev_platform_constraints.terrain import derive_terrain_features
-        from dev_platform_constraints.exploration import CandidateGoal, rank_exploration_goals
+        from dev_platform_constraints.exploration import CandidateGoal, generate_exploration_candidates, rank_exploration_goals
 
         self.assertTrue(CORE_LAYERS)
         self.assertTrue(callable(validate_grid_map))
@@ -38,9 +39,11 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue(callable(fuse_confidence))
         self.assertTrue(callable(load_confidence_weights))
         self.assertTrue(callable(update_obstacle_posterior))
+        self.assertTrue(callable(update_traversability_posterior))
         self.assertTrue(callable(derive_confidence_from_posterior))
         self.assertTrue(callable(update_confidence_from_observation))
         self.assertTrue(callable(build_data_contract_report))
+        self.assertTrue(callable(generate_exploration_candidates))
         self.assertTrue(callable(rank_exploration_goals))
         self.assertEqual(GridMap.__name__, "GridMap")
         self.assertEqual(LayerMetadata.__name__, "LayerMetadata")

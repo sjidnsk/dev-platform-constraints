@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
 from dev_platform_constraints.core import validate_grid_map
+from dev_platform_constraints.exploration import generate_exploration_candidates, rank_exploration_goals
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import default_platform_config_path, load_platform_parameters
@@ -49,6 +50,14 @@ def main() -> None:
     constraints = generate_hard_constraints(grid, platform)
     generate_costmap(grid, constraints, platform)
     validation_report = validate_grid_map(grid)
+    candidates = generate_exploration_candidates(
+        grid,
+        constraints,
+        start=(0, 0),
+        platform=platform,
+        max_candidates=8,
+    )
+    scored_goals = rank_exploration_goals(candidates)[:5]
     plan = astar_path(
         grid.layers["cost"],
         constraints.passable_mask,
@@ -65,6 +74,7 @@ def main() -> None:
         title=f"最小闭环可视化 - {platform.name}",
         confidence_update_report=confidence_report,
         data_contract_report=build_data_contract_report(grid, validation_report),
+        scored_goals=scored_goals,
     )
     summary = dict(report.summary)
     summary["platform"] = platform.name

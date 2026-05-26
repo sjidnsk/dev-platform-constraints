@@ -9,6 +9,7 @@ import numpy as np
 
 from dev_platform_constraints.confidence import ConfidenceUpdateReport
 from dev_platform_constraints.core import validate_grid_map
+from dev_platform_constraints.exploration import CandidateGoal, rank_exploration_goals
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import PlatformParameters
@@ -49,6 +50,12 @@ class VisualizationTests(unittest.TestCase):
             visible_cell_count=12,
             updated_cell_count=10,
         )
+        scored_goals = rank_exploration_goals(
+            (
+                CandidateGoal(cell=(3, 4), information_gain=0.8, value=0.9, confidence_gain=0.7, risk=0.2, path_cost=4.0),
+                CandidateGoal(cell=(5, 6), information_gain=0.4, value=0.2, confidence_gain=0.3, risk=0.1, path_cost=2.0),
+            )
+        )
         report = render_closure_report(
             grid,
             constraints,
@@ -57,6 +64,7 @@ class VisualizationTests(unittest.TestCase):
             title="测试可视化",
             confidence_update_report=confidence_report,
             data_contract_report=data_contract,
+            scored_goals=scored_goals,
         )
 
         self.assertTrue(report.image_path.exists())
@@ -74,6 +82,9 @@ class VisualizationTests(unittest.TestCase):
         self.assertIn("可信度正向提升总量", html)
         self.assertIn("数据契约摘要", html)
         self.assertIn("契约错误数", html)
+        self.assertIn("探索目标摘要", html)
+        self.assertIn("效用", html)
+        self.assertIn("(3, 4)", html)
         self.assertNotIn("confidence_delta_c", html)
         self.assertNotIn("low_confidence_high_risk_path_ratio", html)
         self.assertIn("invalid", html)
@@ -127,12 +138,15 @@ class VisualizationTests(unittest.TestCase):
         self.assertIn("confidence_delta_c", summary)
         self.assertIn("low_confidence_high_risk_path_ratio", summary)
         self.assertIn("data_contract", summary)
+        self.assertIn("top_exploration_goals", summary)
         self.assertEqual(summary["data_contract"]["issue_summary"]["errors"], 0)
+        self.assertGreater(len(summary["top_exploration_goals"]), 0)
         self.assertGreater(float(summary["confidence_delta_c"]), 0.0)
 
         html = html_path.read_text(encoding="utf-8")
         self.assertIn("可信度更新摘要", html)
         self.assertIn("数据契约摘要", html)
+        self.assertIn("探索目标摘要", html)
         self.assertNotIn("confidence_delta_c", html)
 
 

@@ -1,0 +1,10 @@
+{
+  "weights": {
+    "resolution": 0.1,
+    "observation": 0.55,
+    "recency": 0.15,
+    "consistency": 0.1,
+    "model": 0.1
+  },
+  "note": "P1 消融配置：提高观测覆盖权重，用于比较局部观测对路径和目标排序的影响。"
+}

@@ -14,6 +14,7 @@ from matplotlib.colors import ListedColormap
 
 from ..core.layers import GridMap
 from ..confidence import ConfidenceUpdateReport
+from ..exploration import ScoredGoal
 from ..mapping.constraints import ConstraintResult
 from ..path_planning.astar import PlanningResult
 
@@ -65,6 +66,18 @@ def _add_path(axis: plt.Axes, plan: PlanningResult) -> None:
     axis.plot(xs, ys, color="red", linewidth=2.0, label="path")
     axis.scatter([xs[0]], [ys[0]], color="lime", edgecolors="black", s=60, label="start", zorder=3)
     axis.scatter([xs[-1]], [ys[-1]], color="dodgerblue", edgecolors="black", s=60, label="goal", zorder=3)
+    axis.legend(loc="upper right", fontsize=8)
+
+
+def _add_goals(axis: plt.Axes, scored_goals: tuple[ScoredGoal, ...] | None) -> None:
+    if not scored_goals:
+        return
+    xs = [goal.candidate.cell[0] for goal in scored_goals]
+    ys = [goal.candidate.cell[1] for goal in scored_goals]
+    axis.scatter(xs, ys, color="gold", edgecolors="black", marker="*", s=100, label="goals", zorder=4)
+    for index, goal in enumerate(scored_goals, start=1):
+        x, y = goal.candidate.cell
+        axis.text(x + 0.15, y + 0.15, f"G{index}", color="black", fontsize=8, weight="bold")
     axis.legend(loc="upper right", fontsize=8)
 
 
@@ -166,6 +179,35 @@ def _write_html_report(
     </tbody>
   </table>"""
 
+    goals = summary.get("top_exploration_goals")
+    goals_section = ""
+    if isinstance(goals, list) and goals:
+        goal_rows = "\n".join(
+            "<tr>"
+            f"<td>{escape(str(index))}</td>"
+            f"<td>{escape(str(goal.get('cell')))}</td>"
+            f"<td>{escape(str(goal.get('utility')))}</td>"
+            f"<td>{escape(str(goal.get('reachable')))}</td>"
+            f"<td>{escape(str(goal.get('information_gain')))}</td>"
+            f"<td>{escape(str(goal.get('value')))}</td>"
+            f"<td>{escape(str(goal.get('confidence_gain')))}</td>"
+            f"<td>{escape(str(goal.get('risk')))}</td>"
+            f"<td>{escape(str(goal.get('path_cost')))}</td>"
+            "</tr>"
+            for index, goal in enumerate(goals, start=1)
+            if isinstance(goal, dict)
+        )
+        goals_section = f"""
+  <h2>探索目标摘要</h2>
+  <table>
+    <thead>
+      <tr><th>排序</th><th>栅格</th><th>效用</th><th>可达</th><th>信息增益</th><th>价值</th><th>可信度提升</th><th>风险</th><th>路径代价</th></tr>
+    </thead>
+    <tbody>
+      {goal_rows}
+    </tbody>
+  </table>"""
+
     reason_rows = "\n".join(
         f"<tr><th>{escape(name)}</th><td>{count}</td></tr>"
         for name, count in reason_counts.items()
@@ -204,6 +246,7 @@ def _write_html_report(
   </table>
   {confidence_section}
   {contract_section}
+  {goals_section}
   <h2>约束原因计数</h2>
   <table>
     <tbody>
@@ -224,6 +267,7 @@ def render_closure_report(
     title: str = "最小闭环可视化",
     confidence_update_report: ConfidenceUpdateReport | None = None,
     data_contract_report: dict[str, object] | None = None,
+    scored_goals: tuple[ScoredGoal, ...] | None = None,
 ) -> VisualizationReport:
     """渲染最小闭环的静态 PNG 总览图和 HTML 报告。"""
 
@@ -244,6 +288,7 @@ def render_closure_report(
     visible_cost = np.where(constraints.passable_mask, grid.require_layer("cost"), np.nan)
     _add_layer_panel(figure, flat_axes[6], visible_cost, "cost + path", "viridis")
     _add_path(flat_axes[6], plan)
+    _add_goals(flat_axes[6], scored_goals)
 
     hard_constraint_view = np.where(constraints.passable_mask, 0.0, 1.0)
     _add_layer_panel(
@@ -293,5 +338,20 @@ def render_closure_report(
         )
     if data_contract_report is not None:
         summary["data_contract"] = data_contract_report
+    if scored_goals:
+        summary["top_exploration_goals"] = [
+            {
+                "cell": goal.candidate.cell,
+                "utility": goal.utility,
+                "reachable": goal.candidate.reachable,
+                "information_gain": goal.candidate.information_gain,
+                "value": goal.candidate.value,
+                "confidence_gain": goal.candidate.confidence_gain,
+                "risk": goal.candidate.risk,
+                "path_cost": goal.candidate.path_cost,
+                "energy_cost": goal.candidate.energy_cost,
+            }
+            for goal in scored_goals
+        ]
     _write_html_report(html_path, image_path, title, summary, reason_counts)
     return VisualizationReport(image_path=image_path, html_path=html_path, summary=summary)

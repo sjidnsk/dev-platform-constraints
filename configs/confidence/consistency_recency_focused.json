@@ -1,0 +1,10 @@
+{
+  "weights": {
+    "resolution": 0.1,
+    "observation": 0.15,
+    "recency": 0.35,
+    "consistency": 0.3,
+    "model": 0.1
+  },
+  "note": "P1 消融配置：提高时间新鲜度与多源一致性权重，用于比较保守可信度更新策略。"
+}

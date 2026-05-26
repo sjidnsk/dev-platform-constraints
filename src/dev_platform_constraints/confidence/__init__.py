@@ -12,7 +12,7 @@ from .metrics import (
     update_confidence_from_observation,
 )
 from .config import default_confidence_config_path, load_confidence_weights
-from .bayesian import BayesianStateLayer, derive_confidence_from_posterior, update_obstacle_posterior
+from .bayesian import BayesianStateLayer, derive_confidence_from_posterior, update_obstacle_posterior, update_traversability_posterior
 
 __all__ = [
     "BayesianStateLayer",
@@ -28,5 +28,6 @@ __all__ = [
     "fuse_confidence",
     "load_confidence_weights",
     "update_obstacle_posterior",
+    "update_traversability_posterior",
     "update_confidence_from_observation",
 ]
