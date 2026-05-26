@@ -98,14 +98,20 @@ python scripts\generate_example_data.py
 
 ```powershell
 $env:PYTHONPATH='src'
-python scripts\visualize_minimal_closure.py --output-dir outputs\visualization
+python scripts\visualize_minimal_closure.py --output-dir outputs\visualization --confidence-config configs\confidence\default.json
 ```
 
 可通过 `--confidence-config configs\confidence\default.json` 指定可信度融合权重配置。
 
 该命令会生成 `outputs\visualization\minimal_closure.png` 和
 `outputs\visualization\minimal_closure.html`，展示 `elevation`、`slope`、`roughness`、
-`obstacle`、`confidence`、`traversability`、`cost + path` 和硬约束结果。
+`obstacle`、`confidence`、`traversability`、`cost + path` 和硬约束结果。HTML 报告会按中文分组展示：
+
+- 路径与约束摘要：可达性、路径节点数、路径总代价、硬约束违规数和低可信高风险路径比例。
+- 地图与代价摘要：栅格尺寸、分辨率和可通行代价范围。
+- 可信度更新摘要：更新前后平均可信度、低可信区域面积、`ΔC`、可见栅格数和已更新栅格数。
+- 数据契约摘要：图层数量、缺失核心图层数、契约错误数和契约警告数。
+- 约束原因计数：无效、坡度、障碍、障碍高度和禁行区触发次数。
 
 最小闭环脚本会执行：
 

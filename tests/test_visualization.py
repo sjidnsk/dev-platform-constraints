@@ -7,10 +7,12 @@ from pathlib import Path
 
 import numpy as np
 
+from dev_platform_constraints.confidence import ConfidenceUpdateReport
+from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import PlatformParameters
-from dev_platform_constraints.reporting import render_closure_report
+from dev_platform_constraints.reporting import build_data_contract_report, render_closure_report
 from dev_platform_constraints.sample_data import generate_sample_grid
 from dev_platform_constraints.terrain import derive_terrain_features
 
@@ -36,7 +38,26 @@ class VisualizationTests(unittest.TestCase):
         grid, constraints, plan = build_minimal_closure()
 
         output_dir = Path(tempfile.mkdtemp(prefix="dev-platform-constraints-visualization-"))
-        report = render_closure_report(grid, constraints, plan, output_dir, title="测试可视化")
+        data_contract = build_data_contract_report(grid, validate_grid_map(grid))
+        confidence_report = ConfidenceUpdateReport(
+            mean_confidence_before=0.7,
+            mean_confidence_after=0.8,
+            mean_confidence_delta=0.1,
+            low_confidence_area_before=3.0,
+            low_confidence_area_after=1.0,
+            delta_c=0.5,
+            visible_cell_count=12,
+            updated_cell_count=10,
+        )
+        report = render_closure_report(
+            grid,
+            constraints,
+            plan,
+            output_dir,
+            title="测试可视化",
+            confidence_update_report=confidence_report,
+            data_contract_report=data_contract,
+        )
 
         self.assertTrue(report.image_path.exists())
         self.assertTrue(report.html_path.exists())
@@ -49,6 +70,12 @@ class VisualizationTests(unittest.TestCase):
         self.assertIn("测试可视化", html)
         self.assertIn("路径是否可达", html)
         self.assertIn("硬约束违规数", html)
+        self.assertIn("可信度更新摘要", html)
+        self.assertIn("可信度正向提升总量", html)
+        self.assertIn("数据契约摘要", html)
+        self.assertIn("契约错误数", html)
+        self.assertNotIn("confidence_delta_c", html)
+        self.assertNotIn("low_confidence_high_risk_path_ratio", html)
         self.assertIn("invalid", html)
         self.assertIn("obstacle", html)
 
@@ -99,7 +126,14 @@ class VisualizationTests(unittest.TestCase):
         self.assertIn("confidence_mean_after", summary)
         self.assertIn("confidence_delta_c", summary)
         self.assertIn("low_confidence_high_risk_path_ratio", summary)
+        self.assertIn("data_contract", summary)
+        self.assertEqual(summary["data_contract"]["issue_summary"]["errors"], 0)
         self.assertGreater(float(summary["confidence_delta_c"]), 0.0)
+
+        html = html_path.read_text(encoding="utf-8")
+        self.assertIn("可信度更新摘要", html)
+        self.assertIn("数据契约摘要", html)
+        self.assertNotIn("confidence_delta_c", html)
 
 
 if __name__ == "__main__":

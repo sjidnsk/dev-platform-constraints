@@ -96,11 +96,76 @@ def _write_html_report(
     summary: dict[str, object],
     reason_counts: dict[str, int],
 ) -> None:
-    rows = "\n".join(
-        f"<tr><th>{escape(str(key))}</th><td>{escape(str(value))}</td></tr>"
-        for key, value in summary.items()
-        if key not in {"reason_counts"}
+    def table_rows(rows: tuple[tuple[str, object], ...]) -> str:
+        return "\n".join(
+            f"<tr><th>{escape(label)}</th><td>{escape(str(value))}</td></tr>"
+            for label, value in rows
+        )
+
+    path_rows = table_rows(
+        (
+            ("路径是否可达", summary["path_reachable"]),
+            ("路径节点数", summary["path_nodes"]),
+            ("路径总代价", summary["path_total_cost"]),
+            ("扩展节点数", summary["expanded_nodes"]),
+            ("硬约束违规数", summary["hard_constraint_violations"]),
+            ("低可信高风险路径比例", summary["low_confidence_high_risk_path_ratio"]),
+        )
     )
+    grid_rows = table_rows(
+        (
+            ("栅格宽度", summary["grid_width"]),
+            ("栅格高度", summary["grid_height"]),
+            ("栅格分辨率", summary["grid_resolution"]),
+            ("可通行代价最小值", summary["cost_min"]),
+            ("可通行代价最大值", summary["cost_max"]),
+        )
+    )
+    confidence_section = ""
+    if "confidence_delta_c" in summary:
+        confidence_rows = table_rows(
+            (
+                ("更新前平均可信度", summary["confidence_mean_before"]),
+                ("更新后平均可信度", summary["confidence_mean_after"]),
+                ("平均可信度变化", summary["confidence_mean_delta"]),
+                ("更新前低可信区域面积", summary["confidence_low_area_before"]),
+                ("更新后低可信区域面积", summary["confidence_low_area_after"]),
+                ("可信度正向提升总量", summary["confidence_delta_c"]),
+                ("传感器可见栅格数", summary["confidence_visible_cell_count"]),
+                ("已更新栅格数", summary["confidence_updated_cell_count"]),
+            )
+        )
+        confidence_section = f"""
+  <h2>可信度更新摘要</h2>
+  <table>
+    <tbody>
+      {confidence_rows}
+    </tbody>
+  </table>"""
+
+    data_contract = summary.get("data_contract")
+    contract_section = ""
+    if isinstance(data_contract, dict):
+        issue_summary = data_contract.get("issue_summary", {})
+        layers = data_contract.get("layers", {})
+        missing_layers = data_contract.get("missing_layers", ())
+        contract_rows = table_rows(
+            (
+                ("数据契约是否有效", data_contract.get("is_valid")),
+                ("图层数量", len(layers) if isinstance(layers, dict) else 0),
+                ("缺失核心图层数", len(missing_layers) if isinstance(missing_layers, (list, tuple)) else 0),
+                ("契约错误数", issue_summary.get("errors") if isinstance(issue_summary, dict) else None),
+                ("契约警告数", issue_summary.get("warnings") if isinstance(issue_summary, dict) else None),
+            )
+        )
+        contract_section = f"""
+  <h2>数据契约摘要</h2>
+  <table>
+    <tbody>
+      {contract_rows}
+    </tbody>
+  </table>"""
+
     reason_rows = "\n".join(
         f"<tr><th>{escape(name)}</th><td>{count}</td></tr>"
         for name, count in reason_counts.items()
@@ -128,18 +193,17 @@ def _write_html_report(
   <h2>路径与约束摘要</h2>
   <table>
     <tbody>
-      <tr><th>路径是否可达</th><td>{escape(str(summary["path_reachable"]))}</td></tr>
-      <tr><th>路径节点数</th><td>{escape(str(summary["path_nodes"]))}</td></tr>
-      <tr><th>路径总代价</th><td>{escape(str(summary["path_total_cost"]))}</td></tr>
-      <tr><th>硬约束违规数</th><td>{escape(str(summary["hard_constraint_violations"]))}</td></tr>
+      {path_rows}
     </tbody>
   </table>
-  <h2>完整摘要</h2>
+  <h2>地图与代价摘要</h2>
   <table>
     <tbody>
-      {rows}
+      {grid_rows}
     </tbody>
   </table>
+  {confidence_section}
+  {contract_section}
   <h2>约束原因计数</h2>
   <table>
     <tbody>
@@ -159,6 +223,7 @@ def render_closure_report(
     output_dir: str | Path,
     title: str = "最小闭环可视化",
     confidence_update_report: ConfidenceUpdateReport | None = None,
+    data_contract_report: dict[str, object] | None = None,
 ) -> VisualizationReport:
     """渲染最小闭环的静态 PNG 总览图和 HTML 报告。"""
 
@@ -226,5 +291,7 @@ def render_closure_report(
                 "confidence_updated_cell_count": confidence_update_report.updated_cell_count,
             }
         )
+    if data_contract_report is not None:
+        summary["data_contract"] = data_contract_report
     _write_html_report(html_path, image_path, title, summary, reason_counts)
     return VisualizationReport(image_path=image_path, html_path=html_path, summary=summary)
