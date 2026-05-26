@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from .constraints import ConstraintResult
-from .map_layers import GridMap, metadata_for_generated_layer
-from .platform_model import PlatformParameters
+from ..core.layers import GridMap, metadata_for_generated_layer
+from ..platforms.model import PlatformParameters
 
 
 @dataclass(frozen=True)

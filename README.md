@@ -28,6 +28,18 @@ P1/P2 暂不实现；当前只保留最小闭环所需的 costmap 和 A*。`conf
 - P2：未完成，暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
 - 生成数据：scripts/generate_example_data.py 是生成型脚本，用于刷新开发示例数据，不是核心运行依赖；生成的 `data/sample_grid.npz` 不提交版本库。
 
+`src/dev_platform_constraints/` 按职责分为：
+
+- `core/`：栅格地图数据结构、图层元数据和数据契约校验。
+- `platforms/`：平台参数模型、配置加载和默认配置路径。
+- `terrain/`：坡度、崎岖度等地形特征派生。
+- `mapping/`：硬约束掩膜、原因位图和通行代价图生成。
+- `path_planning/`：A* 等路径规划算法。
+- `sample_data/`：开发示例地图生成。
+- `reporting/`：静态可视化和报告输出。
+
+旧的平铺模块导入路径已移除，代码统一使用上述分组包导入。
+
 验证命令：
 
 ```powershell

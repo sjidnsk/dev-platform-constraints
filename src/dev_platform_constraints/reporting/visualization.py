@@ -12,9 +12,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
-from .constraints import ConstraintResult
-from .map_layers import GridMap
-from .planning import PlanningResult
+from ..core.layers import GridMap
+from ..mapping.constraints import ConstraintResult
+from ..path_planning.astar import PlanningResult
 
 
 @dataclass(frozen=True)

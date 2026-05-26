@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .map_layers import GridMap, metadata_for_generated_layer
+from ..core.layers import GridMap, metadata_for_generated_layer
 
 
 def generate_sample_grid(width: int = 32, height: int = 20, resolution: float = 0.5) -> GridMap:

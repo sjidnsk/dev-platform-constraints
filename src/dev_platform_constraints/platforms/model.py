@@ -110,6 +110,6 @@ def load_platform_parameters(path: str | Path) -> PlatformParameters:
 
 
 def default_platform_config_path(name: str = "yutu2") -> Path:
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     filename = f"{name}.json"
     return root / "configs" / "platforms" / filename

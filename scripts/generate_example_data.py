@@ -10,8 +10,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from dev_platform_constraints.examples import generate_sample_grid
-from dev_platform_constraints.terrain_features import derive_terrain_features
+from dev_platform_constraints.sample_data import generate_sample_grid
+from dev_platform_constraints.terrain import derive_terrain_features
 
 
 def main() -> None:

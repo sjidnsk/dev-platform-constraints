@@ -2,10 +2,11 @@ import json
 import unittest
 from pathlib import Path
 
-from dev_platform_constraints.platform_model import (
+from dev_platform_constraints.platforms import (
     VALID_SOURCE_KINDS,
     ParameterValue,
     PlatformParameters,
+    default_platform_config_path,
     load_platform_parameters,
 )
 
@@ -81,6 +82,10 @@ class PlatformConfigTests(unittest.TestCase):
         )
 
         self.assertIn("sensor_fov should be positive", platform.validate())
+
+    def test_default_platform_config_path_points_to_repo_configs(self) -> None:
+        self.assertEqual(default_platform_config_path("yutu2"), REPO_ROOT / "configs" / "platforms" / "yutu2.json")
+        self.assertTrue(default_platform_config_path("yutu2").exists())
 
 
 if __name__ == "__main__":

@@ -2,8 +2,7 @@ import unittest
 
 import numpy as np
 
-from dev_platform_constraints.data_contracts import CORE_LAYERS, validate_grid_map
-from dev_platform_constraints.map_layers import GridMap, LayerMetadata
+from dev_platform_constraints.core import CORE_LAYERS, GridMap, LayerMetadata, validate_grid_map
 
 
 def meta(name: str, unit: str = "unitless") -> LayerMetadata:

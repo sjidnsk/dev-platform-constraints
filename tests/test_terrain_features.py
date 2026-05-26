@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from dev_platform_constraints.terrain_features import derive_roughness, derive_slope
+from dev_platform_constraints.terrain import derive_roughness, derive_slope
 
 
 class TerrainFeatureTests(unittest.TestCase):

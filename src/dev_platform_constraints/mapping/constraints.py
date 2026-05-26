@@ -5,8 +5,8 @@ from enum import IntFlag
 
 import numpy as np
 
-from .map_layers import GridMap
-from .platform_model import PlatformParameters
+from ..core.layers import GridMap
+from ..platforms.model import PlatformParameters
 
 
 class ReasonCode(IntFlag):

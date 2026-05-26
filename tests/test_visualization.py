@@ -7,13 +7,12 @@ from pathlib import Path
 
 import numpy as np
 
-from dev_platform_constraints.constraints import generate_hard_constraints
-from dev_platform_constraints.costmap import generate_costmap
-from dev_platform_constraints.examples import generate_sample_grid
-from dev_platform_constraints.planning import astar_path
-from dev_platform_constraints.platform_model import PlatformParameters
-from dev_platform_constraints.terrain_features import derive_terrain_features
-from dev_platform_constraints.visualization import render_closure_report
+from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
+from dev_platform_constraints.path_planning import astar_path
+from dev_platform_constraints.platforms import PlatformParameters
+from dev_platform_constraints.reporting import render_closure_report
+from dev_platform_constraints.sample_data import generate_sample_grid
+from dev_platform_constraints.terrain import derive_terrain_features
 
 
 def build_minimal_closure():

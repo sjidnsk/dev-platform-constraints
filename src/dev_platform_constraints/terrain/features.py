@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .map_layers import GridMap, derived_metadata
+from ..core.layers import GridMap, derived_metadata
 
 
 def _effective_valid_mask(elevation: np.ndarray, valid_mask: np.ndarray | None) -> np.ndarray:
