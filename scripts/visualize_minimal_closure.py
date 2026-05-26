@@ -10,7 +10,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from dev_platform_constraints.confidence import update_confidence_from_observation
+from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import default_platform_config_path, load_platform_parameters
@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=32, help="示例栅格宽度。")
     parser.add_argument("--height", type=int, default=20, help="示例栅格高度。")
     parser.add_argument("--resolution", type=float, default=0.5, help="示例栅格分辨率，单位为米。")
+    parser.add_argument("--confidence-config", default=str(default_confidence_config_path()), help="可信度融合权重配置路径。")
     return parser.parse_args()
 
 
@@ -34,6 +35,7 @@ def main() -> None:
     grid = generate_sample_grid(width=args.width, height=args.height, resolution=args.resolution)
     derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
     platform = load_platform_parameters(default_platform_config_path(args.platform))
+    confidence_weights = load_confidence_weights(args.confidence_config)
     confidence_report = update_confidence_from_observation(
         grid,
         platform,
@@ -41,6 +43,7 @@ def main() -> None:
         heading_deg=0.0,
         elapsed_time=2.0,
         recency_time_constant=10.0,
+        weights=confidence_weights,
     )
     constraints = generate_hard_constraints(grid, platform)
     generate_costmap(grid, constraints, platform)

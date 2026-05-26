@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -9,19 +10,28 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from dev_platform_constraints.confidence import update_confidence_from_observation
+from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
 from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import default_platform_config_path, load_platform_parameters
+from dev_platform_constraints.reporting import build_data_contract_report
 from dev_platform_constraints.sample_data import generate_sample_grid
 from dev_platform_constraints.terrain import derive_terrain_features
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="运行最小环境-平台-约束闭环。")
+    parser.add_argument("--confidence-config", default=str(default_confidence_config_path()), help="可信度融合权重配置路径。")
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     grid = generate_sample_grid(width=32, height=20, resolution=0.5)
     derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
     platform = load_platform_parameters(default_platform_config_path("yutu2"))
+    confidence_weights = load_confidence_weights(args.confidence_config)
     confidence_report = update_confidence_from_observation(
         grid,
         platform,
@@ -29,6 +39,7 @@ def main() -> None:
         heading_deg=0.0,
         elapsed_time=2.0,
         recency_time_constant=10.0,
+        weights=confidence_weights,
     )
     constraints = generate_hard_constraints(grid, platform)
     generate_costmap(grid, constraints, platform)
@@ -46,6 +57,7 @@ def main() -> None:
         "platform": platform.name,
         "validation_valid": report.is_valid,
         "validation": report.format(),
+        "data_contract": build_data_contract_report(grid, report),
         "hard_constraint_violations": constraints.violation_count,
         "path_reachable": plan.reachable,
         "path_nodes": len(plan.path),

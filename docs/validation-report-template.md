@@ -7,6 +7,7 @@
 - 验证人：`<name>`
 - Python 环境：`<python --version>`
 - 输入平台配置：`configs/platforms/<name>.json`
+- 输入可信度配置：`configs/confidence/<name>.json`
 - 输入地图或生成脚本：`<path or command>`
 
 ## 验证命令
@@ -32,6 +33,8 @@ python scripts\visualize_minimal_closure.py --output-dir outputs\visualization
 | 低可信区域面积变化 | `<before -> after>` | 单位平方米 |
 | `ΔC` | `<float>` | 可信度正向提升总量 |
 | 低可信高风险路径比例 | `<float>` | 路径节点比例 |
+| 数据契约错误数 | `<int>` | 来自 `data_contract.issue_summary.errors` |
+| 数据契约警告数 | `<int>` | 来自 `data_contract.issue_summary.warnings` |
 
 ## 失败案例
 

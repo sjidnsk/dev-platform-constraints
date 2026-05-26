@@ -69,6 +69,8 @@ class VisualizationTests(unittest.TestCase):
                 str(script),
                 "--output-dir",
                 str(output_dir),
+                "--confidence-config",
+                str(repo_root / "configs" / "confidence" / "default.json"),
                 "--width",
                 "16",
                 "--height",
