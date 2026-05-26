@@ -93,6 +93,11 @@ class VisualizationTests(unittest.TestCase):
         self.assertGreater(summary["path_nodes"], 1)
         self.assertTrue(np.isfinite(float(summary["path_total_cost"])))
         self.assertGreaterEqual(summary["hard_constraint_violations"], 0)
+        self.assertIn("confidence_mean_before", summary)
+        self.assertIn("confidence_mean_after", summary)
+        self.assertIn("confidence_delta_c", summary)
+        self.assertIn("low_confidence_high_risk_path_ratio", summary)
+        self.assertGreater(float(summary["confidence_delta_c"]), 0.0)
 
 
 if __name__ == "__main__":

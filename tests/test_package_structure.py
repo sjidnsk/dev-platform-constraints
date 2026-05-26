@@ -4,6 +4,14 @@ from importlib import import_module
 
 class PackageStructureTests(unittest.TestCase):
     def test_canonical_subpackages_export_existing_public_api(self) -> None:
+        from dev_platform_constraints.confidence import (
+            ConfidenceComponent,
+            ConfidenceUpdateReport,
+            ConfidenceWeights,
+            compute_observation_confidence,
+            fuse_confidence,
+            update_confidence_from_observation,
+        )
         from dev_platform_constraints.core import CORE_LAYERS, GridMap, LayerMetadata, validate_grid_map
         from dev_platform_constraints.mapping import CostWeights, ReasonCode, generate_costmap, generate_hard_constraints
         from dev_platform_constraints.path_planning import astar_path
@@ -21,10 +29,16 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue(callable(render_closure_report))
         self.assertTrue(callable(generate_sample_grid))
         self.assertTrue(callable(derive_terrain_features))
+        self.assertTrue(callable(compute_observation_confidence))
+        self.assertTrue(callable(fuse_confidence))
+        self.assertTrue(callable(update_confidence_from_observation))
         self.assertEqual(GridMap.__name__, "GridMap")
         self.assertEqual(LayerMetadata.__name__, "LayerMetadata")
         self.assertEqual(CostWeights.__name__, "CostWeights")
         self.assertEqual(PlatformParameters.__name__, "PlatformParameters")
+        self.assertEqual(ConfidenceComponent.__name__, "ConfidenceComponent")
+        self.assertEqual(ConfidenceWeights.__name__, "ConfidenceWeights")
+        self.assertEqual(ConfidenceUpdateReport.__name__, "ConfidenceUpdateReport")
         self.assertTrue(hasattr(ReasonCode, "SLOPE"))
 
     def test_legacy_flat_modules_are_removed(self) -> None:

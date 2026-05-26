@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
 from ..core.layers import GridMap
+from ..confidence import ConfidenceUpdateReport
 from ..mapping.constraints import ConstraintResult
 from ..path_planning.astar import PlanningResult
 
@@ -65,6 +66,27 @@ def _add_path(axis: plt.Axes, plan: PlanningResult) -> None:
     axis.scatter([xs[0]], [ys[0]], color="lime", edgecolors="black", s=60, label="start", zorder=3)
     axis.scatter([xs[-1]], [ys[-1]], color="dodgerblue", edgecolors="black", s=60, label="goal", zorder=3)
     axis.legend(loc="upper right", fontsize=8)
+
+
+def _low_confidence_high_risk_path_ratio(
+    grid: GridMap,
+    plan: PlanningResult,
+    confidence_threshold: float = 0.5,
+    risk_threshold: float = 0.5,
+) -> float:
+    if not plan.path:
+        return 0.0
+    confidence = np.asarray(grid.require_layer("confidence"), dtype=float)
+    roughness = np.clip(np.asarray(grid.require_layer("roughness"), dtype=float), 0.0, 1.0)
+    obstacle = np.clip(np.asarray(grid.require_layer("obstacle"), dtype=float), 0.0, 1.0)
+    illumination_risk = np.clip(1.0 - np.asarray(grid.require_layer("illumination"), dtype=float), 0.0, 1.0)
+    base_risk = np.clip((roughness + obstacle + illumination_risk) / 3.0, 0.0, 1.0)
+
+    risky_nodes = 0
+    for x, y in plan.path:
+        if confidence[y, x] < confidence_threshold and base_risk[y, x] >= risk_threshold:
+            risky_nodes += 1
+    return float(risky_nodes / len(plan.path))
 
 
 def _write_html_report(
@@ -136,6 +158,7 @@ def render_closure_report(
     plan: PlanningResult,
     output_dir: str | Path,
     title: str = "最小闭环可视化",
+    confidence_update_report: ConfidenceUpdateReport | None = None,
 ) -> VisualizationReport:
     """渲染最小闭环的静态 PNG 总览图和 HTML 报告。"""
 
@@ -188,6 +211,20 @@ def render_closure_report(
         "cost_min": cost_min,
         "cost_max": cost_max,
         "reason_counts": reason_counts,
+        "low_confidence_high_risk_path_ratio": _low_confidence_high_risk_path_ratio(grid, plan),
     }
+    if confidence_update_report is not None:
+        summary.update(
+            {
+                "confidence_mean_before": confidence_update_report.mean_confidence_before,
+                "confidence_mean_after": confidence_update_report.mean_confidence_after,
+                "confidence_mean_delta": confidence_update_report.mean_confidence_delta,
+                "confidence_low_area_before": confidence_update_report.low_confidence_area_before,
+                "confidence_low_area_after": confidence_update_report.low_confidence_area_after,
+                "confidence_delta_c": confidence_update_report.delta_c,
+                "confidence_visible_cell_count": confidence_update_report.visible_cell_count,
+                "confidence_updated_cell_count": confidence_update_report.updated_cell_count,
+            }
+        )
     _write_html_report(html_path, image_path, title, summary, reason_counts)
     return VisualizationReport(image_path=image_path, html_path=html_path, summary=summary)
