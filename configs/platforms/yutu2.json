@@ -1,0 +1,80 @@
+{
+  "name": "玉兔二号近似配置",
+  "parameters": {
+    "max_slope_deg": {
+      "value": 20.0,
+      "unit": "deg",
+      "source_kind": "estimated",
+      "note": "根据公开巡视器能力描述得到的保守近似值。"
+    },
+    "max_obstacle_height": {
+      "value": 0.2,
+      "unit": "m",
+      "source_kind": "estimated",
+      "note": "用于 P0 仿真的近似越障高度。"
+    },
+    "ground_clearance": {
+      "value": 0.18,
+      "unit": "m",
+      "source_kind": "assumed",
+      "note": "设计输入中缺少稳定公开工程值，仅作为仿真默认值。"
+    },
+    "min_turning_radius": {
+      "value": 0.0,
+      "unit": "m",
+      "source_kind": "assumed",
+      "note": "P0 栅格 A* 不强制使用，预留给 Hybrid A*。"
+    },
+    "sensor_range": {
+      "value": 5.0,
+      "unit": "m",
+      "source_kind": "assumed",
+      "note": "后续观测模型占位参数。"
+    },
+    "sensor_fov": {
+      "value": 60.0,
+      "unit": "deg",
+      "source_kind": "assumed",
+      "note": "后续观测模型占位参数。"
+    },
+    "body_length": {
+      "value": 1.5,
+      "unit": "m",
+      "source_kind": "estimated",
+      "note": "公开尺寸量级的近似车体尺寸。"
+    },
+    "body_width": {
+      "value": 1.1,
+      "unit": "m",
+      "source_kind": "estimated",
+      "note": "公开尺寸量级的近似车体尺寸。"
+    },
+    "body_height": {
+      "value": 1.1,
+      "unit": "m",
+      "source_kind": "estimated",
+      "note": "公开尺寸量级的近似车体尺寸。"
+    },
+    "mass": {
+      "value": 140.0,
+      "unit": "kg",
+      "source_kind": "public",
+      "note": "公开任务量级质量的取整值。"
+    },
+    "speed_max": {
+      "value": 200.0,
+      "unit": "m/h",
+      "source_kind": "estimated",
+      "note": "公开巡视器速度量级的近似值。"
+    },
+    "energy_model": {
+      "value": {
+        "base_cost": 1.0,
+        "slope_cost": 1.0
+      },
+      "unit": "relative",
+      "source_kind": "assumed",
+      "note": "P0 占位参数，不进入栅格 A* 代价。"
+    }
+  }
+}
