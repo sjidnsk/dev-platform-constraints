@@ -236,6 +236,56 @@ class ExplorationGoalTests(unittest.TestCase):
             evaluations[0].utility,
         )
 
+    def test_evaluate_goal_sequences_deduplicates_coverage_and_explains_risk(self) -> None:
+        goals = (
+            CandidateGoal(
+                cell=(1, 1),
+                information_gain=0.8,
+                value=0.8,
+                confidence_gain=0.8,
+                risk=0.1,
+                path_cost=1.0,
+                coverage_area=2.0,
+                coverage_cells=((1, 1), (2, 1)),
+            ),
+            CandidateGoal(
+                cell=(2, 1),
+                information_gain=0.7,
+                value=0.7,
+                confidence_gain=0.7,
+                risk=0.2,
+                path_cost=1.2,
+                coverage_area=2.0,
+                coverage_cells=((2, 1), (3, 1)),
+            ),
+            CandidateGoal(
+                cell=(3, 1),
+                information_gain=1.0,
+                value=1.0,
+                confidence_gain=1.0,
+                risk=0.9,
+                path_cost=1.1,
+                coverage_area=2.0,
+                coverage_cells=((4, 1), (5, 1)),
+            ),
+        )
+
+        evaluations = evaluate_goal_sequences(goals, depth=2, beam_width=3)
+
+        overlapping = next(
+            item
+            for item in evaluations
+            if tuple(goal.cell for goal in item.goals) == ((1, 1), (2, 1))
+        )
+        self.assertEqual(overlapping.coverage_area, 3.0)
+        self.assertEqual(overlapping.risk_reasons, tuple())
+        high_risk = next(item for item in evaluations if any(goal.cell == (3, 1) for goal in item.goals))
+        self.assertIn("high_risk:(3, 1):0.900", high_risk.risk_reasons)
+        self.assertLess(
+            max(item.utility for item in evaluations if any(goal.cell == (3, 1) for goal in item.goals)),
+            overlapping.utility,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

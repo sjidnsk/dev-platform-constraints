@@ -15,6 +15,8 @@ python -m unittest discover -s tests
 python scripts\run_minimal_closure.py
 python scripts\run_confidence_ablation.py --output-dir outputs\ablation
 python scripts\visualize_minimal_closure.py --output-dir outputs\visualization --confidence-config configs\confidence\default.json
+python scripts\generate_npz_validation_maps.py --output-dir data\validation_maps
+python scripts\run_confidence_ablation.py --scenario-config configs\ablation\npz_validation_scenarios.json --output-dir outputs\ablation_npz
 ```
 
 ## 当前结果快照
@@ -82,27 +84,37 @@ python scripts\visualize_minimal_closure.py --output-dir outputs\visualization -
 
 ## 本轮增量验证
 
-本轮已完成外部 `.npz` 地图输入、离散地形类别观测似然、P2 多步目标序列解释和 `model-explorer` JSON 契约。消融脚本的逐次 `runs` 现在包含：
+本轮已完成外部 `.npz` 地图输入、离散地形类别观测似然、P2 多步目标序列解释、外部地图验证集生成脚本和 `model-explorer` JSON 契约稳定化。消融脚本的逐次 `runs` 现在包含：
 
 - `map_source_kind`：区分 `sample`、`seeded_synthetic` 和 `npz_grid`。
+- `terrain_likelihood_config`：记录本轮使用的类别观测似然配置；场景配置顶层可设置该字段，命令行 `--terrain-likelihood-config` 可覆盖它。
 - `terrain_model_confidence_mean`：由 `safe_regolith`、`rough`、`obstacle`、`shadow_risk` 类别后验熵派生的 `model` 可信度均值。
-- `top_goal_sequence_details`：Top 序列的坐标、`utility`、`delta_c`、价值覆盖、风险、路径代价、覆盖面积、每段路径代价、累计风险和不可达原因。
+- `top_goal_sequence_details`：Top 序列的坐标、`utility`、`delta_c`、价值覆盖、风险、路径代价、去重覆盖面积、每段路径代价、累计风险、不可达原因和风险原因。
 
 默认 9 场景矩阵重新运行后仍保持上一轮结论：`consistency_recency_focused.json` 在 `9/9` 个场景中取得最低或并列最低路径总代价，`confidence_delta_c_mean = 2.4969659078022812`，无失败场景；`default.json` 的 `confidence_delta_c_mean = 1.1804746191998106`，`observation_focused.json` 的 `confidence_delta_c_mean = 0.4200272742285056`。
 
-额外使用一个临时 `npz_grid` 外部地图场景对比 `default.json` 与 `consistency_recency_focused.json`，结果如下：
+额外固化了 `configs/ablation/npz_validation_scenarios.json`，由 `scripts/generate_npz_validation_maps.py` 生成三类固定外部 `.npz` 验证地图：
 
-| 配置 | 地图来源 | 路径可达 | 路径总代价 | `ΔC` | 类别后验 `model` 可信度均值 | Top 序列数 |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `default.json` | `npz_grid` | `true` | `17.86029704719798` | `1.5965623630228316` | `0.37667757942364055` | `2` |
-| `consistency_recency_focused.json` | `npz_grid` | `true` | `17.728274604176686` | `2.6826057450069047` | `0.37667757942364055` | `2` |
+- `npz_shadow_corridor`：16 x 10 栅格，覆盖阴影走廊和局部风险带。
+- `npz_rock_field_multi_pose`：24 x 14 栅格，覆盖岩块分布和两个观测位姿。
+- `npz_low_confidence_risk_band`：18 x 16 栅格，覆盖低可信风险横向带。
 
-外部地图单场景中，`consistency_recency_focused.json` 仍取得较低路径总代价和更高 `ΔC`，推荐结论没有被打破。但该验证仍只是首版 `.npz` 接入烟测，不足以把 `consistency_recency_focused.json` 自动切换为默认配置。
+外部 `.npz` 场景矩阵聚合结果如下：
 
-`model-explorer` 对接契约已固定 `schema_version = model-explorer-contract/v1`，稳定字段见 `docs/model-explorer-interface.md`，示例见 `docs/model-explorer-contract-example.json`。该接口只输出地图摘要、约束摘要、Top-K 目标、Top 序列和观测更新报告，不引入在线重规划或任务状态机。
+| 配置 | 路径总代价均值 | `ΔC` 均值 | 更新后低可信区域面积均值 | 配置胜率 | 风险冲突命中率 | Top-K 稳定性 | 序列目标稳定性 | 失败场景 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `default.json` | `24.684706617353267` | `2.683213204829476` | `4.583333333333333` | `0/3` | `0.0` | `0.3333333333333333` | `0.3333333333333333` | 无 |
+| `observation_focused.json` | `24.82955135653472` | `1.2179166404761939` | `10.666666666666666` | `0/3` | `0.3333333333333333` | `0.3333333333333333` | `0.3333333333333333` | 无 |
+| `consistency_recency_focused.json` | `24.538800446755562` | `4.525991363703834` | `4.25` | `3/3` | `0.0` | `0.3333333333333333` | `0.3333333333333333` | 无 |
+
+外部 `.npz` 矩阵中，`consistency_recency_focused.json` 继续在 `3/3` 个场景取得最低或并列最低路径总代价，`ΔC` 均值也最高，推荐结论没有被外部输入打破。`observation_focused.json` 在低可信风险带场景出现风险冲突命中，仍不适合作为默认策略。
+
+默认配置决策：本轮仍不把 `consistency_recency_focused.json` 自动切换为默认配置。理由是当前外部地图虽然已经固定为可复现 `.npz` 矩阵，但仍是脚本生成的验证输入，不是真实/半真实 DEM 或上层 `model-explorer` 联调数据；默认切换应等待真实外部数据和长序列观测验证共同支持。
+
+`model-explorer` 对接契约已固定 `schema_version = model-explorer-contract/v1`，稳定字段见 `docs/model-explorer-interface.md`，完整示例见 `docs/model-explorer-contract-example.json`，最小可消费示例见 `docs/model-explorer-minimal-example.json`。该接口只输出地图摘要、约束摘要、Top-K 目标、Top 序列和观测更新报告，不引入在线重规划或任务状态机。
 
 ## 下一步
 
-- 扩展 `.npz` 外部地图验证集，覆盖多尺寸、多光照带、多障碍分布和不同观测位姿。
 - 用真实/半真实 DEM 或遥感派生栅格继续校验 `consistency_recency_focused.json` 的稳定性。
-- 在不改变项目边界的前提下，为 `model-explorer` 增加更多报告消费侧样例和字段兼容性检查。
+- 与上层 `model-explorer` 做一次字段消费联调，确认稳定字段足够，实验字段不会被上层误用为长期契约。
+- 基于真实外部数据和长序列观测结果，再决定是否把 `consistency_recency_focused.json` 提升为默认配置。

@@ -22,10 +22,12 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from dev_platform_constraints.confidence import (
+    TerrainLikelihoodRules,
     compute_terrain_category_likelihood,
     default_confidence_config_path,
     derive_confidence_from_categorical_posterior,
     load_confidence_weights,
+    load_terrain_likelihood_rules,
     update_categorical_posterior,
     update_confidence_from_observation,
 )
@@ -68,7 +70,27 @@ def parse_args() -> argparse.Namespace:
         help="确定性消融场景配置 JSON。",
     )
     parser.add_argument("--top-k", type=int, default=3, help="每次实验保留的探索目标数量。")
+    parser.add_argument(
+        "--terrain-likelihood-config",
+        default=None,
+        help="离散地形类别观测似然规则 JSON；缺省时使用场景配置或内置默认规则。",
+    )
     return parser.parse_args()
+
+
+def _resolve_terrain_likelihood_config(cli_path: str | None, scenario_config_path: str | Path) -> Path | None:
+    if cli_path:
+        return Path(cli_path)
+    config_path = Path(scenario_config_path)
+    with config_path.open("r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+    configured = raw.get("terrain_likelihood_config")
+    if configured is None:
+        return None
+    terrain_path = Path(str(configured))
+    if not terrain_path.is_absolute():
+        terrain_path = config_path.parent / terrain_path
+    return terrain_path
 
 
 def _apply_scenario_layers(grid, scenario: AblationScenario) -> None:
@@ -150,13 +172,14 @@ def _apply_observation_updates(grid, platform, scenario: AblationScenario, weigh
     }
 
 
-def _terrain_model_confidence_mean(grid) -> float:
+def _terrain_model_confidence_mean(grid, rules: TerrainLikelihoodRules | None = None) -> float:
     valid_mask = grid.layers.get("valid_mask", np.ones(grid.shape, dtype=bool)).astype(bool, copy=False)
     likelihood = compute_terrain_category_likelihood(
         slope=grid.require_layer("slope"),
         roughness=grid.require_layer("roughness"),
         obstacle=grid.require_layer("obstacle"),
         illumination=grid.require_layer("illumination"),
+        rules=rules,
         valid_mask=valid_mask,
     )
     prior = np.full(likelihood.probabilities.shape, 1.0 / len(likelihood.categories), dtype=float)
@@ -187,17 +210,24 @@ def _sequence_details(goal_sequences) -> list[dict[str, object]]:
             "cumulative_risk": sequence.cumulative_risk,
             "reachable": sequence.reachable,
             "unreachable_reasons": list(sequence.unreachable_reasons),
+            "risk_reasons": list(sequence.risk_reasons),
         }
         for sequence in goal_sequences
     ]
 
 
-def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int) -> dict[str, object]:
+def _run_single_config(
+    config_path: Path,
+    scenario: AblationScenario,
+    top_k: int,
+    terrain_likelihood_rules: TerrainLikelihoodRules | None = None,
+    terrain_likelihood_config_path: Path | None = None,
+) -> dict[str, object]:
     grid = _build_scenario_grid(scenario)
     _apply_scenario_layers(grid, scenario)
     derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
     _apply_scenario_risk_layers(grid, scenario)
-    terrain_model_confidence_mean = _terrain_model_confidence_mean(grid)
+    terrain_model_confidence_mean = _terrain_model_confidence_mean(grid, terrain_likelihood_rules)
     platform = load_platform_parameters(default_platform_config_path("yutu2"))
     weights = load_confidence_weights(config_path)
     confidence_report = _apply_observation_updates(grid, platform, scenario, weights)
@@ -226,6 +256,7 @@ def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int
     return {
         "scenario_id": scenario.scenario_id,
         "confidence_config": config_path.name,
+        "terrain_likelihood_config": terrain_likelihood_config_path.name if terrain_likelihood_config_path is not None else None,
         "map_source_kind": scenario.map_source.kind,
         "map_source_seed": scenario.map_source.seed,
         "validation_valid": validation_report.is_valid,
@@ -255,6 +286,7 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
     fieldnames = [
         "scenario_id",
         "confidence_config",
+        "terrain_likelihood_config",
         "map_source_kind",
         "map_source_seed",
         "observation_count",
@@ -611,9 +643,21 @@ def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    terrain_likelihood_config_path = _resolve_terrain_likelihood_config(args.terrain_likelihood_config, args.scenario_config)
+    terrain_likelihood_rules = (
+        load_terrain_likelihood_rules(terrain_likelihood_config_path)
+        if terrain_likelihood_config_path is not None
+        else None
+    )
     scenarios = load_ablation_scenarios(args.scenario_config)
     runs = [
-        _run_single_config(Path(path), scenario, args.top_k)
+        _run_single_config(
+            Path(path),
+            scenario,
+            args.top_k,
+            terrain_likelihood_rules,
+            terrain_likelihood_config_path,
+        )
         for scenario in scenarios
         for path in args.configs
     ]
@@ -629,6 +673,7 @@ def main() -> None:
         "image_path": str(image_path),
         "html_path": str(html_path),
         "scenarios": [asdict(scenario) for scenario in scenarios],
+        "terrain_likelihood_config": str(terrain_likelihood_config_path) if terrain_likelihood_config_path is not None else None,
         "aggregate": aggregate,
         "recommendation": recommendation,
         "runs": runs,

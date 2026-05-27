@@ -230,6 +230,77 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertTrue(summary["runs"][0]["path_reachable"])
         self.assertGreater(summary["runs"][0]["terrain_model_confidence_mean"], 0.0)
 
+    def test_ablation_script_accepts_terrain_likelihood_config(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        output_dir = Path(tempfile.mkdtemp(prefix="confidence-ablation-terrain-rules-"))
+        scenario_path = output_dir / "scenario.json"
+        rules_path = output_dir / "terrain_likelihood.json"
+        scenario_path.write_text(
+            json.dumps(
+                {
+                    "terrain_likelihood_config": str(rules_path),
+                    "scenarios": [
+                        {
+                            "scenario_id": "custom_terrain_rules",
+                            "width": 16,
+                            "height": 10,
+                            "resolution": 0.5,
+                            "observations": [{"observer_cell": [0, 5], "heading_deg": 0.0}],
+                            "start_cell": [0, 0],
+                            "goal_cell": [15, 9],
+                            "elapsed_time": 1.0,
+                            "recency_time_constant": 10.0,
+                            "low_confidence_band": [4, 6],
+                            "value_region": [12, 16, 7, 10],
+                            "map_source": {"kind": "sample"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        rules_path.write_text(
+            json.dumps(
+                {
+                    "rules": {
+                        "slope_rough_deg": 12.0,
+                        "roughness_threshold": 0.4,
+                        "obstacle_threshold": 0.45,
+                        "shadow_threshold": 0.45,
+                        "base_likelihood": 0.05,
+                        "risk_likelihood": 0.95,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        script = repo_root / "scripts" / "run_confidence_ablation.py"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--output-dir",
+                str(output_dir),
+                "--configs",
+                str(repo_root / "configs" / "confidence" / "default.json"),
+                "--scenario-config",
+                str(scenario_path),
+                "--top-k",
+                "1",
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["terrain_likelihood_config"], str(rules_path))
+        self.assertEqual(summary["runs"][0]["terrain_likelihood_config"], rules_path.name)
+        self.assertGreater(summary["runs"][0]["terrain_model_confidence_mean"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,61 @@
+{
+  "schema_version": "model-explorer-contract/v1",
+  "grid": {
+    "width": 4,
+    "height": 3,
+    "resolution": 0.5,
+    "frame_id": "moon_local",
+    "origin": [0.0, 0.0],
+    "layers": ["confidence", "cost", "elevation", "valid_mask"]
+  },
+  "constraints": {
+    "violation_count": 0,
+    "passable_ratio": 1.0,
+    "reason_counts": {
+      "invalid": 0,
+      "slope": 0,
+      "obstacle": 0,
+      "obstacle_height": 0,
+      "forbidden": 0
+    }
+  },
+  "top_goals": [
+    {
+      "cell": [2, 1],
+      "utility": 0.42,
+      "reachable": true
+    }
+  ],
+  "top_sequences": [
+    {
+      "cells": [[2, 1]],
+      "utility": 0.42,
+      "coverage_area": 1.0
+    }
+  ],
+  "observation_update": {
+    "delta_c": 0.25,
+    "visible_cell_count": 3,
+    "updated_cell_count": 3
+  },
+  "stable_fields": [
+    "schema_version",
+    "grid.width",
+    "grid.height",
+    "grid.resolution",
+    "grid.frame_id",
+    "grid.origin",
+    "grid.layers",
+    "constraints.violation_count",
+    "constraints.passable_ratio",
+    "constraints.reason_counts",
+    "top_goals.cell",
+    "top_goals.utility",
+    "top_goals.reachable",
+    "top_sequences.cells",
+    "top_sequences.utility",
+    "top_sequences.coverage_area",
+    "observation_update"
+  ],
+  "experimental_fields": []
+}

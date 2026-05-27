@@ -11,9 +11,11 @@ from dev_platform_constraints.confidence import (
     ConfidenceWeights,
     TerrainLikelihoodRules,
     compute_terrain_category_likelihood,
+    default_terrain_likelihood_config_path,
     derive_confidence_from_categorical_posterior,
     derive_confidence_from_posterior,
     load_confidence_weights,
+    load_terrain_likelihood_rules,
     update_categorical_posterior,
     update_obstacle_posterior,
     update_traversability_posterior,
@@ -206,6 +208,89 @@ class ConfidenceConfigAndBayesTests(unittest.TestCase):
             stricter.probabilities[0, 1, category_index["rough"]],
             likelihood.probabilities[0, 1, category_index["rough"]],
         )
+
+    def test_terrain_likelihood_rules_load_from_default_json_config(self) -> None:
+        rules = load_terrain_likelihood_rules(default_terrain_likelihood_config_path())
+
+        self.assertEqual(rules, TerrainLikelihoodRules())
+
+    def test_terrain_likelihood_rules_reject_missing_and_invalid_values(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="terrain-likelihood-config-") as tmp:
+            config_path = Path(tmp) / "invalid.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "rules": {
+                            "slope_rough_deg": 20.0,
+                            "roughness_threshold": 0.6,
+                            "obstacle_threshold": 0.5,
+                            "shadow_threshold": 0.35,
+                            "base_likelihood": 0.02,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "risk_likelihood"):
+                load_terrain_likelihood_rules(config_path)
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "rules": {
+                            "slope_rough_deg": 20.0,
+                            "roughness_threshold": -0.1,
+                            "obstacle_threshold": 0.5,
+                            "shadow_threshold": 0.35,
+                            "base_likelihood": 0.02,
+                            "risk_likelihood": 0.98,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "roughness_threshold"):
+                load_terrain_likelihood_rules(config_path)
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "rules": {
+                            "slope_rough_deg": 20.0,
+                            "roughness_threshold": 0.6,
+                            "obstacle_threshold": 0.5,
+                            "shadow_threshold": 0.35,
+                            "base_likelihood": -0.02,
+                            "risk_likelihood": 0.98,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "likelihood"):
+                load_terrain_likelihood_rules(config_path)
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "rules": {
+                            "slope_rough_deg": 20.0,
+                            "roughness_threshold": 0.6,
+                            "obstacle_threshold": 0.5,
+                            "shadow_threshold": 0.35,
+                            "base_likelihood": 0.02,
+                            "risk_likelihood": 1.2,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, r"\[0, 1\]"):
+                load_terrain_likelihood_rules(config_path)
 
 
 if __name__ == "__main__":

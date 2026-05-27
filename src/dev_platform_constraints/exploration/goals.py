@@ -25,6 +25,7 @@ class CandidateGoal:
     energy_cost: float = 0.0
     reachable: bool = True
     coverage_area: float = 1.0
+    coverage_cells: tuple[tuple[int, int], ...] = tuple()
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class GoalSequenceEvaluation:
     segment_path_costs: tuple[float, ...]
     cumulative_risk: float
     unreachable_reasons: tuple[str, ...]
+    risk_reasons: tuple[str, ...]
 
 
 def _normalize(values: tuple[float, ...]) -> tuple[float, ...]:
@@ -300,6 +302,32 @@ def rank_exploration_goals(
     return tuple(sorted(scored, key=lambda item: item.utility, reverse=True))
 
 
+def _sequence_coverage_area(sequence: tuple[CandidateGoal, ...]) -> float:
+    if not any(goal.coverage_cells for goal in sequence):
+        return float(sum(goal.coverage_area for goal in sequence))
+
+    covered: dict[tuple[int, int], float] = {}
+    area_without_cells = 0.0
+    for goal in sequence:
+        if not goal.coverage_cells:
+            area_without_cells += float(goal.coverage_area)
+            continue
+        per_cell_area = float(goal.coverage_area) / max(len(goal.coverage_cells), 1)
+        for cell in goal.coverage_cells:
+            covered[cell] = max(covered.get(cell, 0.0), per_cell_area)
+    return float(area_without_cells + sum(covered.values()))
+
+
+def _sequence_risk_reasons(sequence: tuple[CandidateGoal, ...], high_risk_threshold: float = 0.70) -> tuple[str, ...]:
+    reasons: list[str] = []
+    for goal in sequence:
+        if not goal.reachable:
+            reasons.append(f"unreachable:{goal.cell}")
+        if goal.risk >= high_risk_threshold:
+            reasons.append(f"high_risk:{goal.cell}:{goal.risk:.3f}")
+    return tuple(reasons)
+
+
 def evaluate_goal_sequences(
     candidates: Iterable[CandidateGoal],
     weights: ExplorationWeights | None = None,
@@ -325,6 +353,7 @@ def evaluate_goal_sequences(
             risk = float(max(goal.risk for goal in sequence))
             segment_path_costs = tuple(float(goal.path_cost) for goal in sequence)
             unreachable_reasons = tuple(f"unreachable:{goal.cell}" for goal in sequence if not goal.reachable)
+            risk_reasons = _sequence_risk_reasons(sequence)
             raw_sequences.append(
                 {
                     "goals": sequence,
@@ -333,10 +362,11 @@ def evaluate_goal_sequences(
                     "value_coverage": float(sum(goal.value for goal in sequence)),
                     "risk": risk,
                     "path_cost": float(sum(goal.path_cost for goal in sequence)),
-                    "coverage_area": float(sum(goal.coverage_area for goal in sequence)),
+                    "coverage_area": _sequence_coverage_area(sequence),
                     "segment_path_costs": segment_path_costs,
                     "cumulative_risk": float(sum(goal.risk for goal in sequence)),
                     "unreachable_reasons": unreachable_reasons,
+                    "risk_reasons": risk_reasons,
                     "energy_cost": float(sum(goal.energy_cost for goal in sequence)),
                     "reachable": all(goal.reachable for goal in sequence),
                 }
@@ -374,6 +404,7 @@ def evaluate_goal_sequences(
                 segment_path_costs=tuple(item["segment_path_costs"]),
                 cumulative_risk=float(item["cumulative_risk"]),
                 unreachable_reasons=tuple(item["unreachable_reasons"]),
+                risk_reasons=tuple(item["risk_reasons"]),
             )
         )
     return tuple(sorted(evaluations, key=lambda item: item.utility, reverse=True))

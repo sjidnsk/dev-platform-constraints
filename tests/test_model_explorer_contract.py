@@ -5,7 +5,11 @@ from pathlib import Path
 from dev_platform_constraints.exploration import evaluate_goal_sequences, generate_exploration_candidates, rank_exploration_goals
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.platforms import PlatformParameters
-from dev_platform_constraints.reporting import build_model_explorer_contract
+from dev_platform_constraints.reporting import (
+    MODEL_EXPLORER_SCHEMA_VERSION,
+    MODEL_EXPLORER_STABLE_FIELDS,
+    build_model_explorer_contract,
+)
 from dev_platform_constraints.sample_data import generate_sample_grid
 from dev_platform_constraints.terrain import derive_terrain_features
 
@@ -30,7 +34,7 @@ class ModelExplorerContractTests(unittest.TestCase):
 
         contract = build_model_explorer_contract(grid, constraints, scored_goals, sequences, confidence_report)
 
-        self.assertEqual(contract["schema_version"], "model-explorer-contract/v1")
+        self.assertEqual(contract["schema_version"], MODEL_EXPLORER_SCHEMA_VERSION)
         self.assertEqual(contract["grid"]["width"], 12)
         self.assertIn("reason_counts", contract["constraints"])
         self.assertIn("top_goals", contract)
@@ -41,6 +45,7 @@ class ModelExplorerContractTests(unittest.TestCase):
         self.assertIn("cell", contract["top_goals"][0])
         self.assertIn("coverage_area", contract["top_sequences"][0])
         self.assertIn("segment_path_costs", contract["top_sequences"][0])
+        self.assertEqual(contract["stable_fields"], list(MODEL_EXPLORER_STABLE_FIELDS))
 
     def test_documented_contract_example_matches_stable_sections(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
@@ -52,6 +57,16 @@ class ModelExplorerContractTests(unittest.TestCase):
         for key in ("grid", "constraints", "top_goals", "top_sequences", "observation_update"):
             with self.subTest(key=key):
                 self.assertIn(key, example)
+
+    def test_minimal_contract_example_uses_only_stable_required_sections(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        example_path = repo_root / "docs" / "model-explorer-minimal-example.json"
+
+        example = json.loads(example_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(example["schema_version"], MODEL_EXPLORER_SCHEMA_VERSION)
+        self.assertEqual(example["stable_fields"], list(MODEL_EXPLORER_STABLE_FIELDS))
+        self.assertEqual(sorted(example), sorted(("schema_version", "grid", "constraints", "top_goals", "top_sequences", "observation_update", "stable_fields", "experimental_fields")))
 
 
 if __name__ == "__main__":

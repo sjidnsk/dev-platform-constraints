@@ -14,9 +14,11 @@ class PackageStructureTests(unittest.TestCase):
             compute_terrain_category_likelihood,
             compute_observation_confidence,
             compute_observation_model,
+            default_terrain_likelihood_config_path,
             derive_confidence_from_posterior,
             fuse_confidence,
             load_confidence_weights,
+            load_terrain_likelihood_rules,
             update_obstacle_posterior,
             update_traversability_posterior,
             update_confidence_from_observation,
@@ -25,7 +27,13 @@ class PackageStructureTests(unittest.TestCase):
         from dev_platform_constraints.mapping import CostWeights, ReasonCode, generate_costmap, generate_hard_constraints
         from dev_platform_constraints.path_planning import astar_path
         from dev_platform_constraints.platforms import PlatformParameters, load_platform_parameters
-        from dev_platform_constraints.reporting import build_data_contract_report, build_model_explorer_contract, render_closure_report
+        from dev_platform_constraints.reporting import (
+            MODEL_EXPLORER_SCHEMA_VERSION,
+            MODEL_EXPLORER_STABLE_FIELDS,
+            build_data_contract_report,
+            build_model_explorer_contract,
+            render_closure_report,
+        )
         from dev_platform_constraints.sample_data import generate_sample_grid, load_npz_grid
         from dev_platform_constraints.terrain import derive_terrain_features
         from dev_platform_constraints.exploration import CandidateGoal, evaluate_goal_sequences, generate_exploration_candidates, rank_exploration_goals
@@ -42,6 +50,8 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue(callable(load_npz_grid))
         self.assertTrue(callable(derive_terrain_features))
         self.assertTrue(callable(compute_terrain_category_likelihood))
+        self.assertTrue(callable(default_terrain_likelihood_config_path))
+        self.assertTrue(callable(load_terrain_likelihood_rules))
         self.assertTrue(callable(compute_observation_confidence))
         self.assertTrue(callable(compute_observation_model))
         self.assertTrue(callable(fuse_confidence))
@@ -52,6 +62,8 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue(callable(update_confidence_from_observation))
         self.assertTrue(callable(build_data_contract_report))
         self.assertTrue(callable(build_model_explorer_contract))
+        self.assertEqual(MODEL_EXPLORER_SCHEMA_VERSION, "model-explorer-contract/v1")
+        self.assertIn("top_sequences.coverage_area", MODEL_EXPLORER_STABLE_FIELDS)
         self.assertTrue(callable(generate_exploration_candidates))
         self.assertTrue(callable(evaluate_goal_sequences))
         self.assertTrue(callable(rank_exploration_goals))

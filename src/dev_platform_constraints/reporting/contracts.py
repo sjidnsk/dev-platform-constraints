@@ -11,6 +11,28 @@ from ..exploration import GoalSequenceEvaluation, ScoredGoal
 from ..mapping.constraints import ConstraintResult
 
 
+MODEL_EXPLORER_SCHEMA_VERSION = "model-explorer-contract/v1"
+MODEL_EXPLORER_STABLE_FIELDS = (
+    "schema_version",
+    "grid.width",
+    "grid.height",
+    "grid.resolution",
+    "grid.frame_id",
+    "grid.origin",
+    "grid.layers",
+    "constraints.violation_count",
+    "constraints.passable_ratio",
+    "constraints.reason_counts",
+    "top_goals.cell",
+    "top_goals.utility",
+    "top_goals.reachable",
+    "top_sequences.cells",
+    "top_sequences.utility",
+    "top_sequences.coverage_area",
+    "observation_update",
+)
+
+
 def build_data_contract_report(grid: GridMap, validation_report: ValidationReport) -> dict[str, Any]:
     """构建可序列化的数据契约检查报告。"""
 
@@ -84,7 +106,7 @@ def build_model_explorer_contract(
 
     passable_mask = np.asarray(constraints.passable_mask, dtype=bool)
     return {
-        "schema_version": "model-explorer-contract/v1",
+        "schema_version": MODEL_EXPLORER_SCHEMA_VERSION,
         "grid": {
             "width": grid.width,
             "height": grid.height,
@@ -125,29 +147,12 @@ def build_model_explorer_contract(
                 "segment_path_costs": [float(value) for value in sequence.segment_path_costs],
                 "cumulative_risk": float(sequence.cumulative_risk),
                 "unreachable_reasons": list(sequence.unreachable_reasons),
+                "risk_reasons": list(sequence.risk_reasons),
             }
             for sequence in goal_sequences
         ],
         "observation_update": _observation_update_payload(confidence_report),
-        "stable_fields": [
-            "schema_version",
-            "grid.width",
-            "grid.height",
-            "grid.resolution",
-            "grid.frame_id",
-            "grid.origin",
-            "grid.layers",
-            "constraints.violation_count",
-            "constraints.passable_ratio",
-            "constraints.reason_counts",
-            "top_goals.cell",
-            "top_goals.utility",
-            "top_goals.reachable",
-            "top_sequences.cells",
-            "top_sequences.utility",
-            "top_sequences.coverage_area",
-            "observation_update",
-        ],
+        "stable_fields": list(MODEL_EXPLORER_STABLE_FIELDS),
         "experimental_fields": [
             "top_goals.information_gain",
             "top_goals.value",
@@ -157,5 +162,6 @@ def build_model_explorer_contract(
             "top_sequences.risk",
             "top_sequences.segment_path_costs",
             "top_sequences.unreachable_reasons",
+            "top_sequences.risk_reasons",
         ],
     }

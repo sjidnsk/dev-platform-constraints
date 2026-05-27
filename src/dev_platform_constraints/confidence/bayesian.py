@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -37,6 +40,51 @@ class TerrainLikelihoodRules:
     risk_likelihood: float = 0.98
 
 
+def _validate_terrain_likelihood_rules(rules: TerrainLikelihoodRules) -> TerrainLikelihoodRules:
+    if rules.slope_rough_deg <= 0.0:
+        raise ValueError("slope_rough_deg must be positive")
+    if rules.roughness_threshold <= 0.0:
+        raise ValueError("roughness_threshold must be positive")
+    if rules.obstacle_threshold <= 0.0:
+        raise ValueError("obstacle_threshold must be positive")
+    if rules.shadow_threshold <= 0.0:
+        raise ValueError("shadow_threshold must be positive")
+    if not 0.0 <= rules.base_likelihood <= 1.0 or not 0.0 <= rules.risk_likelihood <= 1.0:
+        raise ValueError("terrain likelihood values must be probabilities in [0, 1]")
+    if rules.base_likelihood + rules.risk_likelihood <= 0.0:
+        raise ValueError("at least one terrain likelihood value must be positive")
+    return rules
+
+
+def load_terrain_likelihood_rules(path: str | Path) -> TerrainLikelihoodRules:
+    """从 JSON 配置加载离散地形类别观测似然规则。"""
+
+    with Path(path).open("r", encoding="utf-8") as handle:
+        raw: dict[str, Any] = json.load(handle)
+    rules_raw = raw.get("rules")
+    if not isinstance(rules_raw, dict):
+        raise ValueError("terrain likelihood config must contain a rules object")
+
+    values: dict[str, float] = {}
+    for field in (
+        "slope_rough_deg",
+        "roughness_threshold",
+        "obstacle_threshold",
+        "shadow_threshold",
+        "base_likelihood",
+        "risk_likelihood",
+    ):
+        if field not in rules_raw:
+            raise ValueError(f"terrain likelihood rule {field!r} is missing")
+        values[field] = float(rules_raw[field])
+    return _validate_terrain_likelihood_rules(TerrainLikelihoodRules(**values))
+
+
+def default_terrain_likelihood_config_path() -> Path:
+    root = Path(__file__).resolve().parents[3]
+    return root / "configs" / "confidence" / "terrain_likelihood_default.json"
+
+
 def _clip_probability(values: np.ndarray) -> np.ndarray:
     return np.clip(np.asarray(values, dtype=float), 1e-9, 1.0 - 1e-9)
 
@@ -61,15 +109,7 @@ def compute_terrain_category_likelihood(
 
     if tuple(categories) != TERRAIN_CATEGORIES:
         raise ValueError("terrain categories must use the fixed public category order")
-    rules = rules or TerrainLikelihoodRules()
-    if rules.slope_rough_deg <= 0.0:
-        raise ValueError("slope_rough_deg must be positive")
-    if rules.roughness_threshold <= 0.0:
-        raise ValueError("roughness_threshold must be positive")
-    if rules.obstacle_threshold <= 0.0:
-        raise ValueError("obstacle_threshold must be positive")
-    if rules.shadow_threshold <= 0.0:
-        raise ValueError("shadow_threshold must be positive")
+    rules = _validate_terrain_likelihood_rules(rules or TerrainLikelihoodRules())
 
     slope_array = np.asarray(slope, dtype=float)
     roughness_array = np.asarray(roughness, dtype=float)

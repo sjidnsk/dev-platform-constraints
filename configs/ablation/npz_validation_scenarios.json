@@ -1,0 +1,78 @@
+{
+  "terrain_likelihood_config": "../confidence/terrain_likelihood_default.json",
+  "scenarios": [
+    {
+      "scenario_id": "npz_shadow_corridor",
+      "width": 16,
+      "height": 10,
+      "resolution": 0.5,
+      "map_source": {
+        "kind": "npz_grid",
+        "path": "../../data/validation_maps/npz_shadow_corridor.npz"
+      },
+      "observations": [
+        {
+          "observer_cell": [0, 5],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [15, 9],
+      "elapsed_time": 1.5,
+      "recency_time_constant": 10.0,
+      "low_confidence_band": [5, 8],
+      "value_region": [12, 16, 7, 10],
+      "risk_region": [6, 9, 2, 8]
+    },
+    {
+      "scenario_id": "npz_rock_field_multi_pose",
+      "width": 24,
+      "height": 14,
+      "resolution": 0.5,
+      "map_source": {
+        "kind": "npz_grid",
+        "path": "../../data/validation_maps/npz_rock_field_multi_pose.npz"
+      },
+      "observations": [
+        {
+          "observer_cell": [0, 4],
+          "heading_deg": 0.0
+        },
+        {
+          "observer_cell": [0, 10],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 1],
+      "goal_cell": [23, 13],
+      "elapsed_time": 1.5,
+      "recency_time_constant": 10.0,
+      "low_confidence_band": [7, 11],
+      "value_region": [18, 24, 9, 14],
+      "lookahead_steps": 2
+    },
+    {
+      "scenario_id": "npz_low_confidence_risk_band",
+      "width": 18,
+      "height": 16,
+      "resolution": 0.5,
+      "map_source": {
+        "kind": "npz_grid",
+        "path": "../../data/validation_maps/npz_low_confidence_risk_band.npz"
+      },
+      "observations": [
+        {
+          "observer_cell": [0, 8],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [17, 15],
+      "elapsed_time": 1.5,
+      "recency_time_constant": 10.0,
+      "low_confidence_band": [6, 10],
+      "value_region": [13, 18, 11, 16],
+      "risk_region": [6, 10, 0, 16]
+    }
+  ]
+}

@@ -56,7 +56,8 @@
       "coverage_area": 26.25,
       "segment_path_costs": [6.0, 11.5, 11.5],
       "cumulative_risk": 0.51,
-      "unreachable_reasons": []
+      "unreachable_reasons": [],
+      "risk_reasons": []
     }
   ],
   "observation_update": {
@@ -93,6 +94,7 @@
     "top_sequences.value_coverage",
     "top_sequences.risk",
     "top_sequences.segment_path_costs",
-    "top_sequences.unreachable_reasons"
+    "top_sequences.unreachable_reasons",
+    "top_sequences.risk_reasons"
   ]
 }

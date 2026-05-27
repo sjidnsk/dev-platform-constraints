@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "slope_rough_deg": 20.0,
+    "roughness_threshold": 0.6,
+    "obstacle_threshold": 0.5,
+    "shadow_threshold": 0.35,
+    "base_likelihood": 0.02,
+    "risk_likelihood": 0.98
+  },
+  "note": "P1 离散地形类别观测似然默认标定；用于 safe_regolith、rough、obstacle、shadow_risk 类别后验。"
+}

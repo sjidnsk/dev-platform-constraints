@@ -25,9 +25,10 @@
 ## 开发状态
 
 - P0：已完成，包含栅格数据契约、地形特征、平台配置、硬约束、非负代价图和 A* 最小闭环。
-- P1：部分完成，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、可配置多场景可信度权重消融脚本、最小贝叶斯状态后验和离散地形类别后验。
-- P2：已提供离散候选观测目标生成与排序起点，候选收益按传感器 footprint 估计，并支持两步离散 lookahead 与离线多步目标序列评估；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
+- P1：已达到可运行研究原型阶段，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、可配置多场景可信度权重消融脚本、最小贝叶斯状态后验、离散地形类别后验和 JSON 可配置类别观测似然。
+- P2：已达到可运行研究原型阶段，提供离散候选观测目标生成与排序起点，候选收益按传感器 footprint 估计，并支持两步离散 lookahead、离线多步目标序列评估、序列去重覆盖和风险/不可达解释；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
 - 生成数据：scripts/generate_example_data.py 是生成型脚本，用于刷新开发示例数据，不是核心运行依赖；生成的 `data/sample_grid.npz` 不提交版本库。
+- 当前边界内完成度：按 `PROJECT_BOUNDARY.md` 衡量约 `95%`；剩余约 `5%` 主要留给真实/半真实外部数据接入和上层 `model-explorer` 联调反馈。
 
 `src/dev_platform_constraints/` 按职责分为：
 
@@ -51,6 +52,8 @@ $env:PYTHONPATH='src'
 python -m unittest discover -s tests
 python scripts\run_minimal_closure.py
 python scripts\run_confidence_ablation.py --output-dir outputs\ablation
+python scripts\generate_npz_validation_maps.py --output-dir data\validation_maps
+python scripts\run_confidence_ablation.py --scenario-config configs\ablation\npz_validation_scenarios.json --output-dir outputs\ablation_npz
 python scripts\generate_example_data.py
 ```
 
@@ -59,6 +62,8 @@ python scripts\generate_example_data.py
 - 单元测试输出 `OK`。
 - `scripts\run_minimal_closure.py` 输出 JSON 摘要，其中 `validation_valid` 和 `path_reachable` 均为 `true`，并包含 `data_contract`、`confidence_delta_c`、低可信区域面积和局部观测更新指标。
 - `scripts\run_confidence_ablation.py` 输出 JSON/CSV 数据报告和 HTML/PNG 可视化报告，比较不同可信度权重在可配置多场景下对路径代价、`ΔC`、低可信高风险路径比例、配置胜率、风险冲突命中率和 Top-K 探索目标稳定性的影响。
+- `scripts\generate_npz_validation_maps.py` 生成固定种子的外部 `.npz` 验证地图；生成物位于 `data/validation_maps/`，不提交版本库。
+- `configs\ablation\npz_validation_scenarios.json` 可驱动 `npz_grid` 外部地图矩阵，验证 `.npz` 输入、类别似然配置和 P2 序列解释在外部地图上的稳定性。
 - `scripts\generate_example_data.py` 写入 `data/sample_grid.npz`，输出写入路径和图层列表。
 
 ## 运行
@@ -96,6 +101,8 @@ $env:PYTHONPATH='src'
 python -m unittest discover -s tests
 python scripts\run_minimal_closure.py
 python scripts\run_confidence_ablation.py --output-dir outputs\ablation
+python scripts\generate_npz_validation_maps.py --output-dir data\validation_maps
+python scripts\run_confidence_ablation.py --scenario-config configs\ablation\npz_validation_scenarios.json --output-dir outputs\ablation_npz
 python scripts\generate_example_data.py
 ```
 
@@ -148,6 +155,8 @@ python scripts\run_confidence_ablation.py --output-dir outputs\ablation
 `outputs\ablation\confidence_ablation.png` 和 `outputs\ablation\confidence_ablation.html`。
 JSON 报告包含 `scenarios`、逐次 `runs`、配置级 `aggregate` 和 `recommendation`；CSV 保留逐次实验记录。
 HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、配置胜率、风险冲突命中率、Top-K 稳定性、序列目标稳定性和逐场景 Top-K 探索目标。
+可通过 `--terrain-likelihood-config configs\confidence\terrain_likelihood_default.json` 显式指定离散地形类别观测似然配置；也可以在场景配置顶层设置
+`terrain_likelihood_config`，命令行参数优先级更高。
 
 当前多场景结果中，`consistency_recency_focused.json` 在 `9/9` 个场景取得最低或并列最低路径总代价，
 且 `confidence_delta_c_mean = 2.4969659078022812`，高于 `default.json` 的
@@ -158,12 +167,24 @@ HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、配�
 `scripts/generate_example_data.py` 会写入 `data/sample_grid.npz`，其中包含开发用示例图层。
 该文件由脚本生成，不作为核心运行依赖或版本库输入。
 
+生成外部 `.npz` 验证地图：
+
+```powershell
+$env:PYTHONPATH='src'
+python scripts\generate_npz_validation_maps.py --output-dir data\validation_maps
+python scripts\run_confidence_ablation.py --scenario-config configs\ablation\npz_validation_scenarios.json --output-dir outputs\ablation_npz
+```
+
+该验证集当前包含 `npz_shadow_corridor`、`npz_rock_field_multi_pose` 和
+`npz_low_confidence_risk_band` 三个固定种子地图，覆盖阴影走廊、岩块/多观测位姿和低可信风险带。
+`.npz` 生成物由脚本刷新，不纳入版本库；入库的是场景配置和生成脚本。
+
 ## 本轮新增能力
 
-- 外部地图输入：消融场景支持 `map_source.kind = "npz_grid"`，从 `.npz` 地图包读取 `elevation`、`obstacle`、`obstacle_height`、`illumination`、`confidence`、`value` 和 `valid_mask`，并要求外部地图尺寸与分辨率匹配场景配置。
-- P1 类别后验：新增 `TerrainLikelihoodRules` 和 `compute_terrain_category_likelihood(...)`，从坡度、崎岖度、障碍概率和光照层生成 `safe_regolith`、`rough`、`obstacle`、`shadow_risk` 四类观测似然，再由类别后验熵派生 `model` 可信度分量。
-- P2 序列解释：`evaluate_goal_sequences(...)` 输出序列覆盖面积、每段路径代价、累计风险和不可达原因；消融 JSON/CSV/HTML 同步保留 Top 序列解释字段。
-- `model-explorer` 对接：稳定 JSON 契约由 `build_model_explorer_contract(...)` 生成，字段说明见 `docs/model-explorer-interface.md`，示例见 `docs/model-explorer-contract-example.json`。
+- 外部地图输入与验证集：消融场景支持 `map_source.kind = "npz_grid"`，从 `.npz` 地图包读取 `elevation`、`obstacle`、`obstacle_height`、`illumination`、`confidence`、`value` 和 `valid_mask`；新增 `scripts/generate_npz_validation_maps.py` 和 `configs/ablation/npz_validation_scenarios.json`，用于固定复现三类外部地图验证输入。
+- P1 类别后验和似然标定：新增 `TerrainLikelihoodRules`、`compute_terrain_category_likelihood(...)`、`load_terrain_likelihood_rules(...)` 和 `configs/confidence/terrain_likelihood_default.json`，从坡度、崎岖度、障碍概率和光照层生成 `safe_regolith`、`rough`、`obstacle`、`shadow_risk` 四类观测似然，再由类别后验熵派生 `model` 可信度分量。
+- P2 序列解释：`evaluate_goal_sequences(...)` 输出去重后的序列覆盖面积、每段路径代价、累计风险、不可达原因和风险原因；消融 JSON/CSV/HTML 同步保留 Top 序列解释字段。
+- `model-explorer` 对接：稳定 JSON 契约由 `build_model_explorer_contract(...)` 生成，字段说明见 `docs/model-explorer-interface.md`，完整示例见 `docs/model-explorer-contract-example.json`，最小可消费示例见 `docs/model-explorer-minimal-example.json`。
 
 外部 `.npz` 输入首版只依赖 `numpy`，不引入 GIS 重型依赖；默认可信度配置仍不自动切换。
 
