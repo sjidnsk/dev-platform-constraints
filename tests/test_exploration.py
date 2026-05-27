@@ -1,6 +1,13 @@
 import unittest
 
-from dev_platform_constraints.exploration import CandidateGoal, ExplorationWeights, generate_exploration_candidates, rank_exploration_goals
+from dev_platform_constraints.exploration import (
+    CandidateGoal,
+    ExplorationWeights,
+    GoalSequenceEvaluation,
+    evaluate_goal_sequences,
+    generate_exploration_candidates,
+    rank_exploration_goals,
+)
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import ParameterValue, PlatformParameters
@@ -191,6 +198,38 @@ class ExplorationGoalTests(unittest.TestCase):
         occluded_order = [scored.candidate.cell for scored in rank_exploration_goals(occluded_candidates)]
         self.assertGreater(open_target.confidence_gain, occluded_target.confidence_gain)
         self.assertLess(open_order.index((3, 3)), occluded_order.index((3, 3)))
+
+    def test_evaluate_goal_sequences_penalizes_unreachable_and_high_risk_sequences(self) -> None:
+        goals = (
+            CandidateGoal(cell=(2, 2), information_gain=0.7, value=0.7, confidence_gain=0.7, risk=0.1, path_cost=2.0),
+            CandidateGoal(cell=(4, 2), information_gain=1.0, value=1.0, confidence_gain=1.0, risk=0.95, path_cost=2.0),
+            CandidateGoal(
+                cell=(6, 2),
+                information_gain=1.0,
+                value=1.0,
+                confidence_gain=1.0,
+                risk=0.1,
+                path_cost=1.0,
+                reachable=False,
+            ),
+        )
+
+        evaluations = evaluate_goal_sequences(goals, depth=2, beam_width=3)
+
+        self.assertTrue(all(isinstance(item, GoalSequenceEvaluation) for item in evaluations))
+        self.assertEqual(evaluations[0].goals[0].cell, (2, 2))
+        self.assertTrue(evaluations[0].reachable)
+        self.assertGreater(evaluations[0].delta_c, 0.0)
+        self.assertGreater(evaluations[0].value_coverage, 0.0)
+        self.assertTrue(all(not item.reachable or item.utility > -1.0 for item in evaluations))
+        self.assertLess(
+            max(item.utility for item in evaluations if any(goal.cell == (6, 2) for goal in item.goals)),
+            evaluations[0].utility,
+        )
+        self.assertLess(
+            max(item.utility for item in evaluations if any(goal.cell == (4, 2) for goal in item.goals)),
+            evaluations[0].utility,
+        )
 
 
 if __name__ == "__main__":

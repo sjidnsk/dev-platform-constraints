@@ -23,13 +23,13 @@ if str(SRC) not in sys.path:
 
 from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
 from dev_platform_constraints.core import validate_grid_map
-from dev_platform_constraints.exploration import generate_exploration_candidates, rank_exploration_goals
+from dev_platform_constraints.exploration import evaluate_goal_sequences, generate_exploration_candidates, rank_exploration_goals
 from dev_platform_constraints.experiments import AblationScenario, default_ablation_scenario_config_path, load_ablation_scenarios
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import default_platform_config_path, load_platform_parameters
 from dev_platform_constraints.reporting.visualization import _low_confidence_high_risk_path_ratio
-from dev_platform_constraints.sample_data import generate_sample_grid
+from dev_platform_constraints.sample_data import generate_sample_grid, generate_seeded_synthetic_grid
 from dev_platform_constraints.terrain import derive_terrain_features
 
 
@@ -79,6 +79,17 @@ def _apply_scenario_layers(grid, scenario: AblationScenario) -> None:
         grid.layers["obstacle_height"][y, x] = 0.28
 
 
+def _build_scenario_grid(scenario: AblationScenario):
+    if scenario.map_source.kind == "seeded_synthetic":
+        return generate_seeded_synthetic_grid(
+            width=scenario.width,
+            height=scenario.height,
+            resolution=scenario.resolution,
+            seed=int(scenario.map_source.seed or 0),
+        )
+    return generate_sample_grid(width=scenario.width, height=scenario.height, resolution=scenario.resolution)
+
+
 def _apply_scenario_risk_layers(grid, scenario: AblationScenario) -> None:
     if scenario.risk_region is None:
         return
@@ -124,7 +135,7 @@ def _apply_observation_updates(grid, platform, scenario: AblationScenario, weigh
 
 
 def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int) -> dict[str, object]:
-    grid = generate_sample_grid(width=scenario.width, height=scenario.height, resolution=scenario.resolution)
+    grid = _build_scenario_grid(scenario)
     _apply_scenario_layers(grid, scenario)
     derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
     _apply_scenario_risk_layers(grid, scenario)
@@ -151,10 +162,13 @@ def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int
         use_simple_occlusion=scenario.use_simple_occlusion,
     )
     scored_goals = rank_exploration_goals(candidates)[: max(top_k, 0)]
+    goal_sequences = evaluate_goal_sequences(candidates, depth=3, beam_width=max(top_k, 1))[: max(top_k, 0)]
 
     return {
         "scenario_id": scenario.scenario_id,
         "confidence_config": config_path.name,
+        "map_source_kind": scenario.map_source.kind,
+        "map_source_seed": scenario.map_source.seed,
         "validation_valid": validation_report.is_valid,
         "path_reachable": plan.reachable,
         "path_nodes": len(plan.path),
@@ -171,6 +185,8 @@ def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int
         "low_confidence_high_risk_path_ratio": _low_confidence_high_risk_path_ratio(grid, plan),
         "top_goal_cells": [goal.candidate.cell for goal in scored_goals],
         "top_goal_utilities": [goal.utility for goal in scored_goals],
+        "top_goal_sequence_cells": [[goal.cell for goal in sequence.goals] for sequence in goal_sequences],
+        "top_goal_sequence_utilities": [sequence.utility for sequence in goal_sequences],
     }
 
 
@@ -178,6 +194,8 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
     fieldnames = [
         "scenario_id",
         "confidence_config",
+        "map_source_kind",
+        "map_source_seed",
         "observation_count",
         "use_simple_occlusion",
         "lookahead_steps",
@@ -194,6 +212,8 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
         "low_confidence_high_risk_path_ratio",
         "top_goal_cells",
         "top_goal_utilities",
+        "top_goal_sequence_cells",
+        "top_goal_sequence_utilities",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -202,6 +222,8 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
             row = dict(run)
             row["top_goal_cells"] = json.dumps(row["top_goal_cells"], ensure_ascii=False)
             row["top_goal_utilities"] = json.dumps(row["top_goal_utilities"], ensure_ascii=False)
+            row["top_goal_sequence_cells"] = json.dumps(row["top_goal_sequence_cells"], ensure_ascii=False)
+            row["top_goal_sequence_utilities"] = json.dumps(row["top_goal_sequence_utilities"], ensure_ascii=False)
             writer.writerow(row)
 
 
@@ -231,6 +253,18 @@ def _goal_overlap(reference: object, current: object) -> float:
         return 0.0
     reference_set = {tuple(cell) for cell in reference if isinstance(cell, (list, tuple)) and len(cell) == 2}
     current_set = {tuple(cell) for cell in current if isinstance(cell, (list, tuple)) and len(cell) == 2}
+    if not reference_set and not current_set:
+        return 1.0
+    if not reference_set or not current_set:
+        return 0.0
+    return float(len(reference_set & current_set) / len(reference_set | current_set))
+
+
+def _sequence_overlap(reference: object, current: object) -> float:
+    if not isinstance(reference, list) or not isinstance(current, list):
+        return 0.0
+    reference_set = {tuple(tuple(cell) for cell in sequence) for sequence in reference if isinstance(sequence, list)}
+    current_set = {tuple(tuple(cell) for cell in sequence) for sequence in current if isinstance(sequence, list)}
     if not reference_set and not current_set:
         return 1.0
     if not reference_set or not current_set:
@@ -273,6 +307,25 @@ def _build_aggregate(runs: list[dict[str, object]], scenarios: list[AblationScen
         risk_conflict_hit_rate = _mean(
             [1.0 if float(run.get("low_confidence_high_risk_path_ratio") or 0.0) > 0.0 else 0.0 for run in config_runs]
         )
+        reference_sequences = config_runs[0].get("top_goal_sequence_cells") if config_runs else []
+        sequence_goal_stability = _mean([_sequence_overlap(reference_sequences, run.get("top_goal_sequence_cells")) for run in config_runs])
+        map_family_counts: dict[str, int] = {}
+        for scenario in scenarios:
+            family_runs = [
+                run
+                for run in runs
+                if run["scenario_id"] == scenario.scenario_id and run.get("path_total_cost") is not None
+            ]
+            if not family_runs:
+                continue
+            best_cost = min(float(run["path_total_cost"]) for run in family_runs)
+            matching = [
+                run
+                for run in family_runs
+                if run["confidence_config"] == config and abs(float(run["path_total_cost"]) - best_cost) <= 1e-9
+            ]
+            if matching:
+                map_family_counts[scenario.map_source.kind] = map_family_counts.get(scenario.map_source.kind, 0) + len(matching)
         failure_scenarios = [
             str(run["scenario_id"])
             for run in config_runs
@@ -290,6 +343,8 @@ def _build_aggregate(runs: list[dict[str, object]], scenarios: list[AblationScen
                 "risk_conflict_hit_rate": risk_conflict_hit_rate,
                 "best_path_cost_count": best_counts[config],
                 "top_goal_stability": top_goal_stability,
+                "sequence_goal_stability": sequence_goal_stability,
+                "map_family_best_path_cost_count": map_family_counts,
                 "first_goal_change_count": first_goal_change_count,
                 "failure_scenarios": failure_scenarios,
             }
@@ -332,6 +387,7 @@ def _build_recommendation(aggregate: list[dict[str, object]], scenario_count: in
         "failure_scenario_count": len(selected["failure_scenarios"]),
         "risk_conflict_hit_rate": selected["risk_conflict_hit_rate"],
         "top_goal_stability": selected["top_goal_stability"],
+        "sequence_goal_stability": selected["sequence_goal_stability"],
     }
 
 
@@ -396,6 +452,7 @@ def _write_ablation_html(
         f"<td>{escape(str(item['best_path_cost_count']))}</td>"
         f"<td>{float(item['risk_conflict_hit_rate']):.3f}</td>"
         f"<td>{float(item['top_goal_stability']):.3f}</td>"
+        f"<td>{float(item['sequence_goal_stability']):.3f}</td>"
         f"<td>{float(item['top_goal_stability_change']):+.3f}</td>"
         f"<td>{escape(str(item['first_goal_change_count']))}</td>"
         f"<td>{escape(', '.join(item['failure_scenarios']) if item['failure_scenarios'] else '无')}</td>"
@@ -410,6 +467,7 @@ def _write_ablation_html(
             ("配置胜率", f"{recommendation.get('best_path_cost_count')}/{recommendation.get('scenario_count')}"),
             ("风险冲突命中率", recommendation.get("risk_conflict_hit_rate")),
             ("Top-K 稳定性", recommendation.get("top_goal_stability")),
+            ("序列目标稳定性", recommendation.get("sequence_goal_stability")),
             ("失败场景数", recommendation.get("failure_scenario_count")),
         )
     )
@@ -442,7 +500,7 @@ def _write_ablation_html(
   <h2>汇总指标</h2>
   <table>
     <thead>
-      <tr><th>配置</th><th>路径总代价均值</th><th>路径总代价标准差</th><th>可信度正向提升总量均值</th><th>配置胜率</th><th>风险冲突命中率</th><th>Top-K 稳定性</th><th>Top-K 稳定性变化</th><th>首选目标变化次数</th><th>失败场景</th></tr>
+      <tr><th>配置</th><th>路径总代价均值</th><th>路径总代价标准差</th><th>可信度正向提升总量均值</th><th>配置胜率</th><th>风险冲突命中率</th><th>Top-K 稳定性</th><th>序列目标稳定性</th><th>Top-K 稳定性变化</th><th>首选目标变化次数</th><th>失败场景</th></tr>
     </thead>
     <tbody>
       {aggregate_rows}

@@ -7,9 +7,12 @@ import numpy as np
 
 from dev_platform_constraints.confidence import (
     BayesianStateLayer,
+    CategoricalBayesianStateLayer,
     ConfidenceWeights,
+    derive_confidence_from_categorical_posterior,
     derive_confidence_from_posterior,
     load_confidence_weights,
+    update_categorical_posterior,
     update_obstacle_posterior,
     update_traversability_posterior,
 )
@@ -115,6 +118,59 @@ class ConfidenceConfigAndBayesTests(unittest.TestCase):
         agreeing_confidence = derive_confidence_from_posterior(agreeing)
         conflicting_confidence = derive_confidence_from_posterior(conflicting)
 
+        self.assertLess(float(conflicting_confidence.values[0, 0]), float(agreeing_confidence.values[0, 0]))
+
+    def test_categorical_posterior_moves_toward_high_quality_terrain_observation_and_skips_invalid_cells(self) -> None:
+        categories = ("safe_regolith", "rough", "obstacle", "shadow_risk")
+        prior = np.full((2, 2, 4), 0.25)
+        likelihood = np.full((2, 2, 4), 0.05)
+        likelihood[0, 0] = np.array([0.05, 0.85, 0.05, 0.05])
+        likelihood[0, 1] = np.array([0.05, 0.05, 0.85, 0.05])
+        likelihood[1, 0] = np.array([0.05, 0.05, 0.05, 0.85])
+        likelihood[1, 1] = np.array([0.85, 0.05, 0.05, 0.05])
+        quality = np.array([[1.0, 0.8], [0.6, 1.0]])
+        valid = np.array([[True, True], [True, False]])
+
+        posterior = update_categorical_posterior(
+            prior,
+            likelihood,
+            quality,
+            categories=categories,
+            valid_mask=valid,
+        )
+
+        self.assertIsInstance(posterior, CategoricalBayesianStateLayer)
+        self.assertEqual(posterior.categories, categories)
+        self.assertEqual(posterior.name, "terrain")
+        self.assertGreater(float(posterior.probabilities[0, 0, 1]), 0.7)
+        self.assertGreater(float(posterior.probabilities[0, 1, 2]), float(prior[0, 1, 2]))
+        self.assertGreater(float(posterior.probabilities[1, 0, 3]), float(prior[1, 0, 3]))
+        self.assertFalse(bool(posterior.valid_mask[1, 1]))
+        self.assertTrue(np.allclose(posterior.probabilities[1, 1], prior[1, 1]))
+
+    def test_categorical_conflict_lowers_entropy_derived_confidence(self) -> None:
+        categories = ("safe_regolith", "rough", "obstacle", "shadow_risk")
+        confident_prior = np.array([[[0.85, 0.05, 0.05, 0.05]]])
+        agreeing_likelihood = np.array([[[0.90, 0.04, 0.03, 0.03]]])
+        conflicting_likelihood = np.array([[[0.05, 0.85, 0.05, 0.05]]])
+
+        agreeing = update_categorical_posterior(
+            confident_prior,
+            agreeing_likelihood,
+            np.ones((1, 1)),
+            categories=categories,
+        )
+        conflicting = update_categorical_posterior(
+            confident_prior,
+            conflicting_likelihood,
+            np.ones((1, 1)),
+            categories=categories,
+        )
+
+        agreeing_confidence = derive_confidence_from_categorical_posterior(agreeing)
+        conflicting_confidence = derive_confidence_from_categorical_posterior(conflicting)
+
+        self.assertEqual(agreeing_confidence.name, "model")
         self.assertLess(float(conflicting_confidence.values[0, 0]), float(agreeing_confidence.values[0, 0]))
 
 

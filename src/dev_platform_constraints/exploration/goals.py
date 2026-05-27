@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import permutations
 from math import atan2, degrees, hypot
 from typing import Iterable
 
@@ -41,6 +42,17 @@ class ScoredGoal:
     candidate: CandidateGoal
     utility: float
     normalized_terms: dict[str, float]
+
+
+@dataclass(frozen=True)
+class GoalSequenceEvaluation:
+    goals: tuple[CandidateGoal, ...]
+    utility: float
+    delta_c: float
+    value_coverage: float
+    risk: float
+    path_cost: float
+    reachable: bool
 
 
 def _normalize(values: tuple[float, ...]) -> tuple[float, ...]:
@@ -275,3 +287,72 @@ def rank_exploration_goals(
         scored.append(ScoredGoal(candidate=goal, utility=float(utility), normalized_terms=terms))
 
     return tuple(sorted(scored, key=lambda item: item.utility, reverse=True))
+
+
+def evaluate_goal_sequences(
+    candidates: Iterable[CandidateGoal],
+    weights: ExplorationWeights | None = None,
+    *,
+    depth: int = 3,
+    beam_width: int = 5,
+) -> tuple[GoalSequenceEvaluation, ...]:
+    """离线评估多步候选目标序列，不执行闭环重规划。"""
+
+    if depth <= 0:
+        raise ValueError("depth must be positive")
+    if beam_width <= 0:
+        raise ValueError("beam_width must be positive")
+    weights = weights or ExplorationWeights()
+    ranked_candidates = tuple(scored.candidate for scored in rank_exploration_goals(candidates, weights))[:beam_width]
+    if not ranked_candidates:
+        return tuple()
+
+    raw_sequences: list[dict[str, object]] = []
+    max_depth = min(depth, len(ranked_candidates))
+    for length in range(1, max_depth + 1):
+        for sequence in permutations(ranked_candidates, length):
+            risk = float(max(goal.risk for goal in sequence))
+            raw_sequences.append(
+                {
+                    "goals": sequence,
+                    "information_gain": float(sum(goal.information_gain for goal in sequence)),
+                    "delta_c": float(sum(goal.confidence_gain for goal in sequence)),
+                    "value_coverage": float(sum(goal.value for goal in sequence)),
+                    "risk": risk,
+                    "path_cost": float(sum(goal.path_cost for goal in sequence)),
+                    "energy_cost": float(sum(goal.energy_cost for goal in sequence)),
+                    "reachable": all(goal.reachable for goal in sequence),
+                }
+            )
+
+    normalized = {
+        key: _normalize(tuple(float(item[key]) for item in raw_sequences))
+        for key in ("information_gain", "delta_c", "value_coverage", "risk", "path_cost", "energy_cost")
+    }
+    evaluations: list[GoalSequenceEvaluation] = []
+    for index, item in enumerate(raw_sequences):
+        risk_term = normalized["risk"][index]
+        utility = (
+            weights.information_gain * normalized["information_gain"][index]
+            + weights.confidence_gain * normalized["delta_c"][index]
+            + weights.value * normalized["value_coverage"][index]
+            - weights.risk * risk_term
+            - weights.path_cost * normalized["path_cost"][index]
+            - weights.energy_cost * normalized["energy_cost"][index]
+        )
+        if float(item["risk"]) >= 0.70:
+            utility -= weights.unreachable_penalty * float(item["risk"])
+        if not bool(item["reachable"]):
+            utility -= weights.unreachable_penalty
+        evaluations.append(
+            GoalSequenceEvaluation(
+                goals=tuple(item["goals"]),
+                utility=float(utility),
+                delta_c=float(item["delta_c"]),
+                value_coverage=float(item["value_coverage"]),
+                risk=float(item["risk"]),
+                path_cost=float(item["path_cost"]),
+                reachable=bool(item["reachable"]),
+            )
+        )
+    return tuple(sorted(evaluations, key=lambda item: item.utility, reverse=True))

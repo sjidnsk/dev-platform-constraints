@@ -14,15 +14,25 @@ from .metrics import (
     update_confidence_from_observation,
 )
 from .config import default_confidence_config_path, load_confidence_weights
-from .bayesian import BayesianStateLayer, derive_confidence_from_posterior, update_obstacle_posterior, update_traversability_posterior
+from .bayesian import (
+    BayesianStateLayer,
+    CategoricalBayesianStateLayer,
+    derive_confidence_from_categorical_posterior,
+    derive_confidence_from_posterior,
+    update_categorical_posterior,
+    update_obstacle_posterior,
+    update_traversability_posterior,
+)
 
 __all__ = [
     "BayesianStateLayer",
+    "CategoricalBayesianStateLayer",
     "ConfidenceComponent",
     "ConfidenceUpdateReport",
     "ConfidenceWeights",
     "ObservationModelResult",
     "default_confidence_config_path",
+    "derive_confidence_from_categorical_posterior",
     "derive_confidence_from_posterior",
     "compute_consistency_confidence",
     "compute_observation_confidence",
@@ -31,6 +41,7 @@ __all__ = [
     "compute_resolution_confidence",
     "fuse_confidence",
     "load_confidence_weights",
+    "update_categorical_posterior",
     "update_obstacle_posterior",
     "update_traversability_posterior",
     "update_confidence_from_observation",

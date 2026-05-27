@@ -19,6 +19,18 @@ class RepositoryConventionTests(unittest.TestCase):
         self.assertIn("## 开发状态", readme)
         self.assertIn("## 运行", readme)
         self.assertIn("## 假设", readme)
+        self.assertIn("PROJECT_BOUNDARY.md", readme)
+
+    def test_project_boundary_is_formal_repository_document(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        boundary_path = repo_root / "PROJECT_BOUNDARY.md"
+        boundary = boundary_path.read_text(encoding="utf-8")
+
+        self.assertTrue(boundary_path.exists())
+        for heading in ("## 定位", "## 负责范围", "## 不负责范围", "## 对外接口边界", "## 当前阶段原则"):
+            with self.subTest(heading=heading):
+                self.assertIn(heading, boundary)
+        self.assertIn("model-explorer", boundary)
 
     def test_generate_example_data_is_documented_as_generated_artifact(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]

@@ -2,6 +2,7 @@
 
 本项目实现 `docs/confidence-metrics-design.md` 中定义的 P0
 “环境-平台-约束模型”最小闭环，并提供 P1 可信度更新能力和 P2 探索目标排序起点。
+正式项目边界见根目录 `PROJECT_BOUNDARY.md`；本目录只增强建模底座、可解释指标和可复现实验，不承载完整自主探索主循环。
 
 ## 范围
 
@@ -24,8 +25,8 @@
 ## 开发状态
 
 - P0：已完成，包含栅格数据契约、地形特征、平台配置、硬约束、非负代价图和 A* 最小闭环。
-- P1：部分完成，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、可配置多场景可信度权重消融脚本和最小贝叶斯状态后验。
-- P2：已提供离散候选观测目标生成与排序起点，候选收益按传感器 footprint 估计，并支持两步离散 lookahead；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
+- P1：部分完成，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、可配置多场景可信度权重消融脚本、最小贝叶斯状态后验和离散地形类别后验。
+- P2：已提供离散候选观测目标生成与排序起点，候选收益按传感器 footprint 估计，并支持两步离散 lookahead 与离线多步目标序列评估；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
 - 生成数据：scripts/generate_example_data.py 是生成型脚本，用于刷新开发示例数据，不是核心运行依赖；生成的 `data/sample_grid.npz` 不提交版本库。
 
 `src/dev_platform_constraints/` 按职责分为：
@@ -140,17 +141,17 @@ python scripts\run_confidence_ablation.py --output-dir outputs\ablation
 
 可通过 `--scenario-config configs\ablation\scenarios.json` 指定消融场景配置。默认会在
 `baseline_gap`、`upper_observation`、`compact_value`、`risk_conflict_gap`、
-`simple_occlusion` 和 `multi_observation` 六个确定性场景中比较
+`simple_occlusion`、`multi_observation` 和三个 `seeded_synthetic` 半合成场景中比较
 `configs\confidence\default.json`、`configs\confidence\observation_focused.json`
 和 `configs\confidence\consistency_recency_focused.json`，并写入
 `outputs\ablation\confidence_ablation.json`、`outputs\ablation\confidence_ablation.csv`、
 `outputs\ablation\confidence_ablation.png` 和 `outputs\ablation\confidence_ablation.html`。
 JSON 报告包含 `scenarios`、逐次 `runs`、配置级 `aggregate` 和 `recommendation`；CSV 保留逐次实验记录。
-HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、配置胜率、风险冲突命中率、Top-K 稳定性和逐场景 Top-K 探索目标。
+HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、配置胜率、风险冲突命中率、Top-K 稳定性、序列目标稳定性和逐场景 Top-K 探索目标。
 
-当前多场景结果中，`consistency_recency_focused.json` 在 `6/6` 个场景取得最低或并列最低路径总代价，
-且 `confidence_delta_c_mean = 2.1355068777281496`，高于 `default.json` 的
-`0.9941911282559772` 和 `observation_focused.json` 的 `0.3417227034477648`。
+当前多场景结果中，`consistency_recency_focused.json` 在 `9/9` 个场景取得最低或并列最低路径总代价，
+且 `confidence_delta_c_mean = 2.4969659078022812`，高于 `default.json` 的
+`1.1804746191998106` 和 `observation_focused.json` 的 `0.4200272742285056`。
 报告中的 `recommendation.confidence_config` 因此推荐以 `consistency_recency_focused.json` 作为下一轮 P1/P2 实验基线，
 但默认配置暂不自动切换，直到更多地图和观测位姿验证完成。
 

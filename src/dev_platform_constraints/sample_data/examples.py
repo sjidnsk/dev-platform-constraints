@@ -43,3 +43,59 @@ def generate_sample_grid(width: int = 32, height: int = 20, resolution: float = 
     for name, (data, unit) in layers.items():
         grid.add_layer(name, data, metadata_for_generated_layer(name, resolution, grid.frame_id, unit=unit))
     return grid
+
+
+def generate_seeded_synthetic_grid(width: int, height: int, resolution: float, seed: int) -> GridMap:
+    """创建固定随机种子的半合成月面栅格，用于外推验证。"""
+
+    if width <= 0 or height <= 0:
+        raise ValueError("width and height must be positive")
+    if resolution <= 0.0:
+        raise ValueError("resolution must be positive")
+
+    rng = np.random.default_rng(int(seed))
+    grid = GridMap(resolution=resolution, origin=(0.0, 0.0), width=width, height=height, frame_id="moon_local")
+    yy, xx = np.mgrid[0:height, 0:width]
+    x_norm = xx / max(width - 1, 1)
+    y_norm = yy / max(height - 1, 1)
+
+    base_slope = rng.uniform(0.02, 0.07) * xx * resolution + rng.uniform(-0.03, 0.03) * yy * resolution
+    undulation = 0.025 * np.sin(xx / rng.uniform(2.5, 5.5)) + 0.020 * np.cos(yy / rng.uniform(2.0, 4.5))
+    elevation = base_slope + undulation + rng.normal(0.0, 0.006, size=(height, width))
+
+    for _ in range(3):
+        center_x = rng.uniform(0.2, 0.85)
+        center_y = rng.uniform(0.15, 0.85)
+        radius_x = rng.uniform(0.015, 0.045)
+        radius_y = rng.uniform(0.015, 0.060)
+        depth = rng.uniform(0.04, 0.12)
+        crater = np.exp(-(((x_norm - center_x) ** 2) / radius_x + ((y_norm - center_y) ** 2) / radius_y))
+        elevation -= depth * crater
+
+    obstacle = np.zeros((height, width), dtype=float)
+    rock_count = max(1, (width * height) // 90)
+    rock_ys = rng.integers(1, max(2, height - 1), size=rock_count)
+    rock_xs = rng.integers(max(2, width // 4), max(3, width - 2), size=rock_count)
+    obstacle[rock_ys, rock_xs] = 0.35
+    obstacle_height = obstacle * 0.14
+
+    shadow_center = rng.uniform(0.35, 0.75)
+    shadow_width = rng.uniform(0.06, 0.14)
+    shadow = np.exp(-((y_norm - shadow_center) ** 2) / shadow_width)
+    illumination = np.clip(0.82 - 0.30 * shadow + 0.08 * np.cos(x_norm * np.pi), 0.05, 1.0)
+    confidence = np.clip(0.70 + rng.normal(0.0, 0.04, size=(height, width)), 0.45, 0.85)
+    value = np.zeros((height, width), dtype=float)
+    valid_mask = np.ones((height, width), dtype=bool)
+
+    layers = {
+        "elevation": (elevation, "m"),
+        "obstacle": (obstacle, "probability"),
+        "obstacle_height": (obstacle_height, "m"),
+        "illumination": (illumination, "unitless"),
+        "confidence": (confidence, "unitless"),
+        "value": (value, "unitless"),
+        "valid_mask": (valid_mask, "boolean"),
+    }
+    for name, (data, unit) in layers.items():
+        grid.add_layer(name, data, metadata_for_generated_layer(name, resolution, grid.frame_id, unit=unit, source_kind="seeded_synthetic"))
+    return grid

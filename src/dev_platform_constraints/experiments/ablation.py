@@ -13,6 +13,12 @@ class ObservationPose:
 
 
 @dataclass(frozen=True)
+class MapSource:
+    kind: str = "sample"
+    seed: int | None = None
+
+
+@dataclass(frozen=True)
 class AblationScenario:
     scenario_id: str
     width: int
@@ -29,6 +35,7 @@ class AblationScenario:
     occlusion_obstacles: tuple[tuple[int, int], ...] = tuple()
     use_simple_occlusion: bool = False
     lookahead_steps: int = 1
+    map_source: MapSource = MapSource()
 
 
 def default_ablation_scenario_config_path() -> Path:
@@ -92,6 +99,20 @@ def _parse_observations(raw: dict[str, Any], width: int, height: int) -> tuple[O
     return tuple(observations)
 
 
+def _parse_map_source(raw: dict[str, Any]) -> MapSource:
+    map_source_raw = raw.get("map_source", {"kind": "sample"})
+    if not isinstance(map_source_raw, dict):
+        raise ValueError("map_source must be an object")
+    kind = str(map_source_raw.get("kind", "sample"))
+    if kind == "sample":
+        return MapSource(kind="sample")
+    if kind == "seeded_synthetic":
+        if "seed" not in map_source_raw:
+            raise ValueError("map_source.seed is required for seeded_synthetic")
+        return MapSource(kind="seeded_synthetic", seed=int(map_source_raw["seed"]))
+    raise ValueError("map_source.kind must be sample or seeded_synthetic")
+
+
 def _parse_scenario(raw: dict[str, Any]) -> AblationScenario:
     width = int(raw.get("width", 0))
     height = int(raw.get("height", 0))
@@ -116,6 +137,7 @@ def _parse_scenario(raw: dict[str, Any]) -> AblationScenario:
         occlusion_obstacles=tuple(_cell(cell, "occlusion_obstacles", width, height) for cell in raw.get("occlusion_obstacles", ())),
         use_simple_occlusion=bool(raw.get("use_simple_occlusion", False)),
         lookahead_steps=max(1, int(raw.get("lookahead_steps", 1))),
+        map_source=_parse_map_source(raw),
     )
 
 

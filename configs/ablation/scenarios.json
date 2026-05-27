@@ -115,6 +115,79 @@
       "low_confidence_band": [9, 12],
       "value_region": [24, 31, 10, 17],
       "lookahead_steps": 2
+    },
+    {
+      "scenario_id": "synthetic_crater_shadow",
+      "width": 30,
+      "height": 18,
+      "resolution": 0.5,
+      "map_source": {
+        "kind": "seeded_synthetic",
+        "seed": 101
+      },
+      "observations": [
+        {
+          "observer_cell": [0, 9],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 1],
+      "goal_cell": [29, 17],
+      "elapsed_time": 2.5,
+      "recency_time_constant": 9.0,
+      "low_confidence_band": [8, 11],
+      "value_region": [22, 29, 12, 18],
+      "risk_region": [10, 16, 4, 15]
+    },
+    {
+      "scenario_id": "synthetic_multi_pose",
+      "width": 28,
+      "height": 18,
+      "resolution": 0.5,
+      "map_source": {
+        "kind": "seeded_synthetic",
+        "seed": 202
+      },
+      "observations": [
+        {
+          "observer_cell": [0, 6],
+          "heading_deg": 0.0
+        },
+        {
+          "observer_cell": [0, 12],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [27, 17],
+      "elapsed_time": 1.5,
+      "recency_time_constant": 12.0,
+      "low_confidence_band": [9, 13],
+      "value_region": [20, 27, 8, 15],
+      "lookahead_steps": 2
+    },
+    {
+      "scenario_id": "synthetic_risk_band",
+      "width": 26,
+      "height": 16,
+      "resolution": 0.5,
+      "map_source": {
+        "kind": "seeded_synthetic",
+        "seed": 303
+      },
+      "observations": [
+        {
+          "observer_cell": [0, 8],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [25, 15],
+      "elapsed_time": 3.0,
+      "recency_time_constant": 10.0,
+      "low_confidence_band": [7, 11],
+      "value_region": [19, 26, 10, 16],
+      "risk_region": [7, 12, 0, 16]
     }
   ]
 }

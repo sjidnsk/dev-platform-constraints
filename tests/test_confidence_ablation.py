@@ -43,6 +43,7 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertEqual(summary["recommendation"]["confidence_config"], "consistency_recency_focused.json")
         self.assertIn("推荐", summary["recommendation"]["reason"])
         self.assertIn("risk_conflict_gap", {scenario["scenario_id"] for scenario in summary["scenarios"]})
+        self.assertTrue(any(scenario["map_source"]["kind"] == "seeded_synthetic" for scenario in summary["scenarios"]))
         self.assertGreater(summary["recommendation"]["risk_conflict_hit_rate"], 0.0)
         self.assertTrue(
             any(
@@ -63,6 +64,9 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertIn("confidence_delta_c", first_run)
         self.assertIn("low_confidence_high_risk_path_ratio", first_run)
         self.assertIn("top_goal_cells", first_run)
+        self.assertIn("top_goal_sequence_cells", first_run)
+        self.assertIn("top_goal_sequence_utilities", first_run)
+        self.assertIn("map_source_kind", first_run)
         self.assertLessEqual(len(first_run["top_goal_cells"]), 2)
         self.assertGreater(len(summary["runs"]), len(summary["aggregate"]))
 
@@ -75,6 +79,8 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertIn("top_goal_stability_change", first_aggregate)
         self.assertIn("risk_conflict_hit_rate", first_aggregate)
         self.assertIn("failure_scenarios", first_aggregate)
+        self.assertIn("map_family_best_path_cost_count", first_aggregate)
+        self.assertIn("sequence_goal_stability", first_aggregate)
 
         with Path(summary["csv_path"]).open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
@@ -88,6 +94,7 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertIn("Top-K 探索目标", html)
         self.assertIn("配置胜率", html)
         self.assertIn("Top-K 稳定性", html)
+        self.assertIn("序列目标稳定性", html)
         self.assertIn("推荐配置", html)
         self.assertIn("风险冲突命中率", html)
         self.assertIn("confidence_ablation.png", html)
@@ -112,6 +119,7 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
                             "recency_time_constant": 10.0,
                             "low_confidence_band": [4, 6],
                             "value_region": [12, 16, 7, 10],
+                            "map_source": {"kind": "sample"},
                         }
                     ]
                 }
@@ -144,6 +152,7 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertEqual([scenario["scenario_id"] for scenario in summary["scenarios"]], ["custom_small"])
         self.assertEqual(len(summary["runs"]), 1)
         self.assertEqual(summary["runs"][0]["scenario_id"], "custom_small")
+        self.assertEqual(summary["runs"][0]["map_source_kind"], "sample")
 
 
 if __name__ == "__main__":
