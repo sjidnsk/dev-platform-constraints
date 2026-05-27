@@ -99,27 +99,54 @@ def _footprint_gain_layers(
     confidence_gain: np.ndarray,
     value: np.ndarray,
     frontier: np.ndarray,
+    lookahead_steps: int,
+    use_simple_occlusion: bool,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     footprint_information = np.zeros(grid.shape, dtype=float)
     footprint_value = np.zeros(grid.shape, dtype=float)
     footprint_confidence_gain = np.zeros(grid.shape, dtype=float)
+
+    def footprint_scores(cell: tuple[int, int], heading_reference: tuple[int, int]) -> tuple[float, float]:
+        model = compute_observation_model(
+            grid,
+            platform,
+            cell,
+            _heading_from_start(heading_reference, cell),
+            use_simple_occlusion=use_simple_occlusion,
+        )
+        footprint_weight = np.asarray(model.quality_layer, dtype=float) * valid
+        if not np.any(footprint_weight > 0.0):
+            x, y = cell
+            return float(confidence_gain[y, x]), float(value[y, x])
+        return (
+            max(float(confidence_gain[cell[1], cell[0]]), float(np.max(confidence_gain * footprint_weight))),
+            max(float(value[cell[1], cell[0]]), float(np.max(value * footprint_weight))),
+        )
 
     for y in range(grid.height):
         for x in range(grid.width):
             if not valid[y, x]:
                 continue
             cell = (x, y)
-            model = compute_observation_model(grid, platform, cell, _heading_from_start(start, cell))
-            footprint_weight = np.asarray(model.quality_layer, dtype=float) * valid
-            if np.any(footprint_weight > 0.0):
-                footprint_confidence_gain[y, x] = max(
-                    float(confidence_gain[y, x]),
-                    float(np.max(confidence_gain * footprint_weight)),
+            direct_confidence_gain, direct_value = footprint_scores(cell, start)
+            if lookahead_steps >= 2:
+                model = compute_observation_model(
+                    grid,
+                    platform,
+                    cell,
+                    _heading_from_start(start, cell),
+                    use_simple_occlusion=use_simple_occlusion,
                 )
-                footprint_value[y, x] = max(float(value[y, x]), float(np.max(value * footprint_weight)))
-            else:
-                footprint_confidence_gain[y, x] = float(confidence_gain[y, x])
-                footprint_value[y, x] = float(value[y, x])
+                downstream_cells = np.argwhere((model.quality_layer > 0.0) & valid)
+                for downstream_y, downstream_x in downstream_cells:
+                    downstream_cell = (int(downstream_x), int(downstream_y))
+                    if downstream_cell == cell:
+                        continue
+                    downstream_confidence_gain, downstream_value = footprint_scores(downstream_cell, cell)
+                    direct_confidence_gain = max(direct_confidence_gain, downstream_confidence_gain)
+                    direct_value = max(direct_value, downstream_value)
+            footprint_confidence_gain[y, x] = direct_confidence_gain
+            footprint_value[y, x] = direct_value
             footprint_information[y, x] = float(
                 np.clip(0.7 * footprint_confidence_gain[y, x] + 0.3 * frontier[y, x], 0.0, 1.0)
             )
@@ -133,11 +160,15 @@ def generate_exploration_candidates(
     platform: PlatformParameters,
     *,
     max_candidates: int = 8,
+    lookahead_steps: int = 1,
+    use_simple_occlusion: bool = False,
 ) -> tuple[CandidateGoal, ...]:
     """从地图层生成离散探索候选点，供效用排序复用。"""
 
     if max_candidates <= 0:
         return tuple()
+    if lookahead_steps <= 0:
+        raise ValueError("lookahead_steps must be positive")
     sx, sy = start
     if not (0 <= sx < grid.width and 0 <= sy < grid.height):
         raise ValueError("start must be inside the grid")
@@ -160,6 +191,8 @@ def generate_exploration_candidates(
         confidence_gain,
         value,
         frontier,
+        lookahead_steps,
+        use_simple_occlusion,
     )
     seed_score = np.where(
         valid,

@@ -1,0 +1,120 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "baseline_gap",
+      "width": 32,
+      "height": 20,
+      "resolution": 0.5,
+      "observations": [
+        {
+          "observer_cell": [0, 10],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [31, 19],
+      "elapsed_time": 2.0,
+      "recency_time_constant": 10.0,
+      "low_confidence_band": [10, 12],
+      "value_region": [27, 32, 16, 20]
+    },
+    {
+      "scenario_id": "upper_observation",
+      "width": 32,
+      "height": 20,
+      "resolution": 0.5,
+      "observations": [
+        {
+          "observer_cell": [0, 6],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 2],
+      "goal_cell": [31, 15],
+      "elapsed_time": 3.0,
+      "recency_time_constant": 8.0,
+      "low_confidence_band": [7, 10],
+      "value_region": [24, 30, 3, 9]
+    },
+    {
+      "scenario_id": "compact_value",
+      "width": 24,
+      "height": 16,
+      "resolution": 0.5,
+      "observations": [
+        {
+          "observer_cell": [0, 8],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [23, 15],
+      "elapsed_time": 1.5,
+      "recency_time_constant": 12.0,
+      "low_confidence_band": [5, 8],
+      "value_region": [17, 24, 11, 16]
+    },
+    {
+      "scenario_id": "risk_conflict_gap",
+      "width": 32,
+      "height": 20,
+      "resolution": 0.5,
+      "observations": [
+        {
+          "observer_cell": [0, 0],
+          "heading_deg": 90.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [31, 19],
+      "elapsed_time": 2.0,
+      "recency_time_constant": 10.0,
+      "low_confidence_band": [12, 19],
+      "value_region": [27, 32, 16, 20],
+      "risk_region": [12, 19, 0, 20]
+    },
+    {
+      "scenario_id": "simple_occlusion",
+      "width": 32,
+      "height": 20,
+      "resolution": 0.5,
+      "observations": [
+        {
+          "observer_cell": [5, 10],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [31, 19],
+      "elapsed_time": 2.0,
+      "recency_time_constant": 10.0,
+      "low_confidence_band": [10, 13],
+      "value_region": [18, 25, 8, 13],
+      "occlusion_obstacles": [[12, 10], [13, 10], [14, 10]],
+      "use_simple_occlusion": true
+    },
+    {
+      "scenario_id": "multi_observation",
+      "width": 32,
+      "height": 20,
+      "resolution": 0.5,
+      "observations": [
+        {
+          "observer_cell": [0, 7],
+          "heading_deg": 0.0
+        },
+        {
+          "observer_cell": [0, 13],
+          "heading_deg": 0.0
+        }
+      ],
+      "start_cell": [0, 0],
+      "goal_cell": [31, 19],
+      "elapsed_time": 1.5,
+      "recency_time_constant": 12.0,
+      "low_confidence_band": [9, 12],
+      "value_region": [24, 31, 10, 17],
+      "lookahead_steps": 2
+    }
+  ]
+}

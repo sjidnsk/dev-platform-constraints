@@ -27,6 +27,7 @@ class PackageStructureTests(unittest.TestCase):
         from dev_platform_constraints.sample_data import generate_sample_grid
         from dev_platform_constraints.terrain import derive_terrain_features
         from dev_platform_constraints.exploration import CandidateGoal, generate_exploration_candidates, rank_exploration_goals
+        from dev_platform_constraints.experiments import AblationScenario, load_ablation_scenarios
 
         self.assertTrue(CORE_LAYERS)
         self.assertTrue(callable(validate_grid_map))
@@ -48,6 +49,7 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue(callable(build_data_contract_report))
         self.assertTrue(callable(generate_exploration_candidates))
         self.assertTrue(callable(rank_exploration_goals))
+        self.assertTrue(callable(load_ablation_scenarios))
         self.assertEqual(GridMap.__name__, "GridMap")
         self.assertEqual(LayerMetadata.__name__, "LayerMetadata")
         self.assertEqual(CostWeights.__name__, "CostWeights")
@@ -58,6 +60,7 @@ class PackageStructureTests(unittest.TestCase):
         self.assertEqual(ObservationModelResult.__name__, "ObservationModelResult")
         self.assertEqual(BayesianStateLayer.__name__, "BayesianStateLayer")
         self.assertEqual(CandidateGoal.__name__, "CandidateGoal")
+        self.assertEqual(AblationScenario.__name__, "AblationScenario")
         self.assertTrue(hasattr(ReasonCode, "SLOPE"))
 
     def test_legacy_flat_modules_are_removed(self) -> None:

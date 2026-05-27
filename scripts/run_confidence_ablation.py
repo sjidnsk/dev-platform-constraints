@@ -4,7 +4,7 @@ import argparse
 import csv
 import json
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from html import escape
 from math import sqrt
 from pathlib import Path
@@ -13,6 +13,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib import font_manager
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,28 +24,13 @@ if str(SRC) not in sys.path:
 from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
 from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.exploration import generate_exploration_candidates, rank_exploration_goals
+from dev_platform_constraints.experiments import AblationScenario, default_ablation_scenario_config_path, load_ablation_scenarios
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import default_platform_config_path, load_platform_parameters
 from dev_platform_constraints.reporting.visualization import _low_confidence_high_risk_path_ratio
 from dev_platform_constraints.sample_data import generate_sample_grid
 from dev_platform_constraints.terrain import derive_terrain_features
-
-
-@dataclass(frozen=True)
-class AblationScenario:
-    scenario_id: str
-    width: int
-    height: int
-    resolution: float
-    observer_cell: tuple[int, int]
-    heading_deg: float
-    start_cell: tuple[int, int]
-    goal_cell: tuple[int, int]
-    elapsed_time: float
-    recency_time_constant: float
-    low_confidence_band: tuple[int, int]
-    value_region: tuple[int, int, int, int]
 
 
 def _configure_plot_font() -> None:
@@ -69,55 +55,13 @@ def parse_args() -> argparse.Namespace:
         ],
         help="需要比较的可信度权重配置路径列表。",
     )
+    parser.add_argument(
+        "--scenario-config",
+        default=str(default_ablation_scenario_config_path()),
+        help="确定性消融场景配置 JSON。",
+    )
     parser.add_argument("--top-k", type=int, default=3, help="每次实验保留的探索目标数量。")
     return parser.parse_args()
-
-
-def _default_scenarios() -> list[AblationScenario]:
-    return [
-        AblationScenario(
-            scenario_id="baseline_gap",
-            width=32,
-            height=20,
-            resolution=0.5,
-            observer_cell=(0, 10),
-            heading_deg=0.0,
-            start_cell=(0, 0),
-            goal_cell=(31, 19),
-            elapsed_time=2.0,
-            recency_time_constant=10.0,
-            low_confidence_band=(10, 12),
-            value_region=(27, 32, 16, 20),
-        ),
-        AblationScenario(
-            scenario_id="upper_observation",
-            width=32,
-            height=20,
-            resolution=0.5,
-            observer_cell=(0, 6),
-            heading_deg=0.0,
-            start_cell=(0, 2),
-            goal_cell=(31, 15),
-            elapsed_time=3.0,
-            recency_time_constant=8.0,
-            low_confidence_band=(7, 10),
-            value_region=(24, 30, 3, 9),
-        ),
-        AblationScenario(
-            scenario_id="compact_value",
-            width=24,
-            height=16,
-            resolution=0.5,
-            observer_cell=(0, 8),
-            heading_deg=0.0,
-            start_cell=(0, 0),
-            goal_cell=(23, 15),
-            elapsed_time=1.5,
-            recency_time_constant=12.0,
-            low_confidence_band=(5, 8),
-            value_region=(17, 24, 11, 16),
-        ),
-    ]
 
 
 def _apply_scenario_layers(grid, scenario: AblationScenario) -> None:
@@ -130,23 +74,63 @@ def _apply_scenario_layers(grid, scenario: AblationScenario) -> None:
         max(0, value_y0) : min(grid.height, value_y1),
         max(0, value_x0) : min(grid.width, value_x1),
     ] = 0.8
+    for x, y in scenario.occlusion_obstacles:
+        grid.layers["obstacle"][y, x] = 1.0
+        grid.layers["obstacle_height"][y, x] = 0.28
+
+
+def _apply_scenario_risk_layers(grid, scenario: AblationScenario) -> None:
+    if scenario.risk_region is None:
+        return
+    x0, x1, y0, y1 = scenario.risk_region
+    grid.layers["roughness"][y0:y1, x0:x1] = 1.0
+    grid.layers["illumination"][y0:y1, x0:x1] = 0.0
+    grid.layers["confidence"][y0:y1, x0:x1] = np.minimum(grid.layers["confidence"][y0:y1, x0:x1], 0.25)
+
+
+def _apply_observation_updates(grid, platform, scenario: AblationScenario, weights) -> dict[str, float | int]:
+    before = grid.require_layer("confidence").copy()
+    visible_cell_count = 0
+    updated_cell_count = 0
+    for observation in scenario.observations:
+        report = update_confidence_from_observation(
+            grid,
+            platform,
+            observer_cell=observation.observer_cell,
+            heading_deg=observation.heading_deg,
+            elapsed_time=scenario.elapsed_time,
+            recency_time_constant=scenario.recency_time_constant,
+            weights=weights,
+        )
+        visible_cell_count += report.visible_cell_count
+        updated_cell_count += report.updated_cell_count
+
+    after = grid.require_layer("confidence")
+    valid_mask = grid.layers.get("valid_mask", np.ones(grid.shape, dtype=bool)).astype(bool, copy=False)
+    cell_area = grid.resolution * grid.resolution
+    before_valid = before[valid_mask]
+    after_valid = after[valid_mask]
+    delta = after - before
+    return {
+        "mean_confidence_before": float(np.mean(before_valid)) if before_valid.size else 0.0,
+        "mean_confidence_after": float(np.mean(after_valid)) if after_valid.size else 0.0,
+        "mean_confidence_delta": float(np.mean(after_valid) - np.mean(before_valid)) if before_valid.size else 0.0,
+        "low_confidence_area_before": float(np.count_nonzero(before_valid < 0.5) * cell_area),
+        "low_confidence_area_after": float(np.count_nonzero(after_valid < 0.5) * cell_area),
+        "delta_c": float(np.sum(np.maximum(delta[valid_mask], 0.0)) * cell_area),
+        "visible_cell_count": visible_cell_count,
+        "updated_cell_count": updated_cell_count,
+    }
 
 
 def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int) -> dict[str, object]:
     grid = generate_sample_grid(width=scenario.width, height=scenario.height, resolution=scenario.resolution)
     _apply_scenario_layers(grid, scenario)
     derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
+    _apply_scenario_risk_layers(grid, scenario)
     platform = load_platform_parameters(default_platform_config_path("yutu2"))
     weights = load_confidence_weights(config_path)
-    confidence_report = update_confidence_from_observation(
-        grid,
-        platform,
-        observer_cell=scenario.observer_cell,
-        heading_deg=scenario.heading_deg,
-        elapsed_time=scenario.elapsed_time,
-        recency_time_constant=scenario.recency_time_constant,
-        weights=weights,
-    )
+    confidence_report = _apply_observation_updates(grid, platform, scenario, weights)
     constraints = generate_hard_constraints(grid, platform)
     generate_costmap(grid, constraints, platform)
     validation_report = validate_grid_map(grid)
@@ -157,7 +141,15 @@ def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int
         goal=scenario.goal_cell,
         resolution=grid.resolution,
     )
-    candidates = generate_exploration_candidates(grid, constraints, start=scenario.start_cell, platform=platform, max_candidates=12)
+    candidates = generate_exploration_candidates(
+        grid,
+        constraints,
+        start=scenario.start_cell,
+        platform=platform,
+        max_candidates=12,
+        lookahead_steps=scenario.lookahead_steps,
+        use_simple_occlusion=scenario.use_simple_occlusion,
+    )
     scored_goals = rank_exploration_goals(candidates)[: max(top_k, 0)]
 
     return {
@@ -167,12 +159,15 @@ def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int
         "path_reachable": plan.reachable,
         "path_nodes": len(plan.path),
         "path_total_cost": float(plan.total_cost) if plan.reachable else None,
-        "confidence_mean_before": confidence_report.mean_confidence_before,
-        "confidence_mean_after": confidence_report.mean_confidence_after,
-        "confidence_mean_delta": confidence_report.mean_confidence_delta,
-        "confidence_low_area_before": confidence_report.low_confidence_area_before,
-        "confidence_low_area_after": confidence_report.low_confidence_area_after,
-        "confidence_delta_c": confidence_report.delta_c,
+        "observation_count": len(scenario.observations),
+        "use_simple_occlusion": scenario.use_simple_occlusion,
+        "lookahead_steps": scenario.lookahead_steps,
+        "confidence_mean_before": confidence_report["mean_confidence_before"],
+        "confidence_mean_after": confidence_report["mean_confidence_after"],
+        "confidence_mean_delta": confidence_report["mean_confidence_delta"],
+        "confidence_low_area_before": confidence_report["low_confidence_area_before"],
+        "confidence_low_area_after": confidence_report["low_confidence_area_after"],
+        "confidence_delta_c": confidence_report["delta_c"],
         "low_confidence_high_risk_path_ratio": _low_confidence_high_risk_path_ratio(grid, plan),
         "top_goal_cells": [goal.candidate.cell for goal in scored_goals],
         "top_goal_utilities": [goal.utility for goal in scored_goals],
@@ -183,6 +178,9 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
     fieldnames = [
         "scenario_id",
         "confidence_config",
+        "observation_count",
+        "use_simple_occlusion",
+        "lookahead_steps",
         "validation_valid",
         "path_reachable",
         "path_nodes",
@@ -272,6 +270,9 @@ def _build_aggregate(runs: list[dict[str, object]], scenarios: list[AblationScen
         top_goal_stability = _mean([_goal_overlap(reference_goals, run.get("top_goal_cells")) for run in config_runs])
         reference_first = _first_goal(reference_goals)
         first_goal_change_count = sum(1 for run in config_runs if _first_goal(run.get("top_goal_cells")) != reference_first)
+        risk_conflict_hit_rate = _mean(
+            [1.0 if float(run.get("low_confidence_high_risk_path_ratio") or 0.0) > 0.0 else 0.0 for run in config_runs]
+        )
         failure_scenarios = [
             str(run["scenario_id"])
             for run in config_runs
@@ -286,13 +287,52 @@ def _build_aggregate(runs: list[dict[str, object]], scenarios: list[AblationScen
                 "confidence_delta_c_std": _std(delta_cs),
                 "confidence_low_area_after_mean": _mean(low_areas),
                 "low_confidence_high_risk_path_ratio_mean": _mean(risk_ratios),
+                "risk_conflict_hit_rate": risk_conflict_hit_rate,
                 "best_path_cost_count": best_counts[config],
                 "top_goal_stability": top_goal_stability,
                 "first_goal_change_count": first_goal_change_count,
                 "failure_scenarios": failure_scenarios,
             }
         )
+    default_stability = float(aggregate[0]["top_goal_stability"]) if aggregate else 0.0
+    for item in aggregate:
+        item["top_goal_stability_change"] = float(item["top_goal_stability"]) - default_stability
     return aggregate
+
+
+def _build_recommendation(aggregate: list[dict[str, object]], scenario_count: int) -> dict[str, object]:
+    if not aggregate:
+        return {
+            "confidence_config": None,
+            "reason": "没有可用配置，无法形成推荐。",
+        }
+
+    def ranking_key(item: dict[str, object]) -> tuple[float, float, float, float, float]:
+        failure_count = len(item.get("failure_scenarios", []))
+        return (
+            -float(failure_count),
+            float(item["best_path_cost_count"]),
+            float(item["confidence_delta_c_mean"]),
+            -float(item["path_total_cost_mean"]),
+            float(item["top_goal_stability"]),
+        )
+
+    selected = max(aggregate, key=ranking_key)
+    reason = (
+        f"推荐 {selected['confidence_config']}：配置胜率 "
+        f"{selected['best_path_cost_count']}/{scenario_count}，"
+        f"ΔC 均值 {float(selected['confidence_delta_c_mean']):.6g}，"
+        f"失败场景 {len(selected['failure_scenarios'])} 个。"
+    )
+    return {
+        "confidence_config": selected["confidence_config"],
+        "reason": reason,
+        "best_path_cost_count": selected["best_path_cost_count"],
+        "scenario_count": scenario_count,
+        "failure_scenario_count": len(selected["failure_scenarios"]),
+        "risk_conflict_hit_rate": selected["risk_conflict_hit_rate"],
+        "top_goal_stability": selected["top_goal_stability"],
+    }
 
 
 def _write_ablation_image(path: Path, runs: list[dict[str, object]], aggregate: list[dict[str, object]]) -> None:
@@ -331,6 +371,7 @@ def _write_ablation_html(
     image_path: Path,
     runs: list[dict[str, object]],
     aggregate: list[dict[str, object]],
+    recommendation: dict[str, object],
 ) -> None:
     """写入多场景可信度权重消融的中文 HTML 报告。"""
 
@@ -353,11 +394,24 @@ def _write_ablation_html(
         f"<td>{float(item['path_total_cost_std']):.6g}</td>"
         f"<td>{float(item['confidence_delta_c_mean']):.6g}</td>"
         f"<td>{escape(str(item['best_path_cost_count']))}</td>"
+        f"<td>{float(item['risk_conflict_hit_rate']):.3f}</td>"
         f"<td>{float(item['top_goal_stability']):.3f}</td>"
+        f"<td>{float(item['top_goal_stability_change']):+.3f}</td>"
         f"<td>{escape(str(item['first_goal_change_count']))}</td>"
         f"<td>{escape(', '.join(item['failure_scenarios']) if item['failure_scenarios'] else '无')}</td>"
         "</tr>"
         for item in aggregate
+    )
+    recommendation_rows = "\n".join(
+        f"<tr><th>{escape(label)}</th><td>{escape(str(value))}</td></tr>"
+        for label, value in (
+            ("推荐配置", recommendation.get("confidence_config")),
+            ("推荐理由", recommendation.get("reason")),
+            ("配置胜率", f"{recommendation.get('best_path_cost_count')}/{recommendation.get('scenario_count')}"),
+            ("风险冲突命中率", recommendation.get("risk_conflict_hit_rate")),
+            ("Top-K 稳定性", recommendation.get("top_goal_stability")),
+            ("失败场景数", recommendation.get("failure_scenario_count")),
+        )
     )
     html = f"""<!doctype html>
 <html lang="zh-CN">
@@ -379,10 +433,16 @@ def _write_ablation_html(
   <p class="subtitle">对比不同可信度融合权重在多场景下对路径、可信度更新和探索目标排序的影响。</p>
   <h2>多场景汇总图</h2>
   <img src="{escape(image_path.name)}" alt="可信度权重消融指标对比图">
+  <h2>推荐结论</h2>
+  <table>
+    <tbody>
+      {recommendation_rows}
+    </tbody>
+  </table>
   <h2>汇总指标</h2>
   <table>
     <thead>
-      <tr><th>配置</th><th>路径总代价均值</th><th>路径总代价标准差</th><th>可信度正向提升总量均值</th><th>配置胜率</th><th>Top-K 稳定性</th><th>首选目标变化次数</th><th>失败场景</th></tr>
+      <tr><th>配置</th><th>路径总代价均值</th><th>路径总代价标准差</th><th>可信度正向提升总量均值</th><th>配置胜率</th><th>风险冲突命中率</th><th>Top-K 稳定性</th><th>Top-K 稳定性变化</th><th>首选目标变化次数</th><th>失败场景</th></tr>
     </thead>
     <tbody>
       {aggregate_rows}
@@ -407,13 +467,14 @@ def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    scenarios = _default_scenarios()
+    scenarios = load_ablation_scenarios(args.scenario_config)
     runs = [
         _run_single_config(Path(path), scenario, args.top_k)
         for scenario in scenarios
         for path in args.configs
     ]
     aggregate = _build_aggregate(runs, scenarios)
+    recommendation = _build_recommendation(aggregate, len(scenarios))
     json_path = output_dir / "confidence_ablation.json"
     csv_path = output_dir / "confidence_ablation.csv"
     image_path = output_dir / "confidence_ablation.png"
@@ -425,12 +486,13 @@ def main() -> None:
         "html_path": str(html_path),
         "scenarios": [asdict(scenario) for scenario in scenarios],
         "aggregate": aggregate,
+        "recommendation": recommendation,
         "runs": runs,
     }
     json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     _write_csv(csv_path, runs)
     _write_ablation_image(image_path, runs, aggregate)
-    _write_ablation_html(html_path, image_path, runs, aggregate)
+    _write_ablation_html(html_path, image_path, runs, aggregate, recommendation)
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     if any(not run["validation_valid"] or not run["path_reachable"] for run in runs):
         raise SystemExit(2)

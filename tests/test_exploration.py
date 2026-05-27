@@ -116,6 +116,82 @@ class ExplorationGoalTests(unittest.TestCase):
         self.assertGreater(forward_candidate.confidence_gain, 0.1)
         self.assertGreater(forward_candidate.information_gain, 0.1)
 
+    def test_two_step_lookahead_adds_downstream_footprint_gain_without_changing_reachability(self) -> None:
+        grid = generate_sample_grid(width=12, height=7, resolution=1.0)
+        derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
+        grid.layers["confidence"][:] = 0.9
+        grid.layers["value"][:] = 0.0
+        grid.layers["confidence"][3, 4] = 0.6
+        grid.layers["confidence"][3, 7] = 0.1
+        grid.layers["value"][3, 7] = 1.0
+        platform = self.sensor_platform(sensor_range=3.0, sensor_fov=70.0)
+        constraints = generate_hard_constraints(grid, platform)
+        generate_costmap(grid, constraints, platform)
+
+        single_step = generate_exploration_candidates(
+            grid,
+            constraints,
+            start=(0, 3),
+            platform=platform,
+            max_candidates=12,
+            lookahead_steps=1,
+        )
+        two_step = generate_exploration_candidates(
+            grid,
+            constraints,
+            start=(0, 3),
+            platform=platform,
+            max_candidates=12,
+            lookahead_steps=2,
+        )
+
+        single_candidate = next(candidate for candidate in single_step if candidate.cell == (4, 3))
+        two_step_candidate = next(candidate for candidate in two_step if candidate.cell == (4, 3))
+        self.assertTrue(two_step_candidate.reachable)
+        self.assertEqual(single_candidate.reachable, two_step_candidate.reachable)
+        self.assertGreater(two_step_candidate.confidence_gain, single_candidate.confidence_gain)
+        self.assertGreater(two_step_candidate.information_gain, single_candidate.information_gain)
+
+    def test_simple_occlusion_reduces_hidden_footprint_gain_and_changes_candidate_order(self) -> None:
+        grid = generate_sample_grid(width=10, height=7, resolution=1.0)
+        derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
+        grid.layers["obstacle"][:] = 0.0
+        grid.layers["obstacle_height"][:] = 0.0
+        grid.layers["confidence"][:] = 0.9
+        grid.layers["value"][:] = 0.0
+        grid.layers["obstacle"][3, 5] = 1.0
+        grid.layers["confidence"][3, 7] = 0.1
+        grid.layers["value"][3, 7] = 1.0
+        grid.layers["confidence"][5, 4] = 0.3
+        grid.layers["value"][5, 4] = 0.6
+        platform = self.sensor_platform(sensor_range=5.0, sensor_fov=75.0)
+        constraints = generate_hard_constraints(grid, platform)
+        generate_costmap(grid, constraints, platform)
+
+        open_candidates = generate_exploration_candidates(
+            grid,
+            constraints,
+            start=(0, 3),
+            platform=platform,
+            max_candidates=50,
+            use_simple_occlusion=False,
+        )
+        occluded_candidates = generate_exploration_candidates(
+            grid,
+            constraints,
+            start=(0, 3),
+            platform=platform,
+            max_candidates=50,
+            use_simple_occlusion=True,
+        )
+
+        open_target = next(candidate for candidate in open_candidates if candidate.cell == (3, 3))
+        occluded_target = next(candidate for candidate in occluded_candidates if candidate.cell == (3, 3))
+        open_order = [scored.candidate.cell for scored in rank_exploration_goals(open_candidates)]
+        occluded_order = [scored.candidate.cell for scored in rank_exploration_goals(occluded_candidates)]
+        self.assertGreater(open_target.confidence_gain, occluded_target.confidence_gain)
+        self.assertLess(open_order.index((3, 3)), occluded_order.index((3, 3)))
+
 
 if __name__ == "__main__":
     unittest.main()
