@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
 from ..core.layers import GridMap
-from ..confidence import ConfidenceUpdateReport
+from ..confidence import ConfidenceUpdateReport, CoverageUpdateReport
 from ..exploration import ScoredGoal
 from ..mapping.constraints import ConstraintResult
 from ..path_planning.astar import PlanningResult
@@ -156,6 +156,28 @@ def _write_html_report(
     </tbody>
   </table>"""
 
+    coverage_section = ""
+    if "coverage_rate" in summary:
+        coverage_rows = table_rows(
+            (
+                ("总有效栅格数", summary["total_valid_cell_count"]),
+                ("已覆盖有效栅格数", summary["covered_valid_cell_count"]),
+                ("新增覆盖栅格数", summary["newly_covered_cell_count"]),
+                ("总有效面积", summary["total_valid_area"]),
+                ("已覆盖面积", summary["covered_valid_area"]),
+                ("新增覆盖面积", summary["newly_covered_area"]),
+                ("覆盖率", summary["coverage_rate"]),
+                ("覆盖率增量", summary["coverage_rate_delta"]),
+            )
+        )
+        coverage_section = f"""
+  <h2>覆盖率摘要</h2>
+  <table>
+    <tbody>
+      {coverage_rows}
+    </tbody>
+  </table>"""
+
     data_contract = summary.get("data_contract")
     contract_section = ""
     if isinstance(data_contract, dict):
@@ -193,6 +215,8 @@ def _write_html_report(
             f"<td>{escape(str(goal.get('confidence_gain')))}</td>"
             f"<td>{escape(str(goal.get('risk')))}</td>"
             f"<td>{escape(str(goal.get('path_cost')))}</td>"
+            f"<td>{escape(str(goal.get('expected_new_coverage_area')))}</td>"
+            f"<td>{escape(str(goal.get('expected_coverage_rate_delta')))}</td>"
             "</tr>"
             for index, goal in enumerate(goals, start=1)
             if isinstance(goal, dict)
@@ -201,7 +225,7 @@ def _write_html_report(
   <h2>探索目标摘要</h2>
   <table>
     <thead>
-      <tr><th>排序</th><th>栅格</th><th>效用</th><th>可达</th><th>信息增益</th><th>价值</th><th>可信度提升</th><th>风险</th><th>路径代价</th></tr>
+      <tr><th>排序</th><th>栅格</th><th>效用</th><th>可达</th><th>信息增益</th><th>价值</th><th>可信度提升</th><th>风险</th><th>路径代价</th><th>预计新增覆盖面积</th><th>预计覆盖率增量</th></tr>
     </thead>
     <tbody>
       {goal_rows}
@@ -245,6 +269,7 @@ def _write_html_report(
     </tbody>
   </table>
   {confidence_section}
+  {coverage_section}
   {contract_section}
   {goals_section}
   <h2>约束原因计数</h2>
@@ -266,6 +291,7 @@ def render_closure_report(
     output_dir: str | Path,
     title: str = "最小闭环可视化",
     confidence_update_report: ConfidenceUpdateReport | None = None,
+    coverage_update_report: CoverageUpdateReport | None = None,
     data_contract_report: dict[str, object] | None = None,
     scored_goals: tuple[ScoredGoal, ...] | None = None,
 ) -> VisualizationReport:
@@ -336,6 +362,19 @@ def render_closure_report(
                 "confidence_updated_cell_count": confidence_update_report.updated_cell_count,
             }
         )
+    if coverage_update_report is not None:
+        summary.update(
+            {
+                "total_valid_cell_count": coverage_update_report.total_valid_cell_count,
+                "covered_valid_cell_count": coverage_update_report.covered_valid_cell_count,
+                "newly_covered_cell_count": coverage_update_report.newly_covered_cell_count,
+                "total_valid_area": coverage_update_report.total_valid_area,
+                "covered_valid_area": coverage_update_report.covered_valid_area,
+                "newly_covered_area": coverage_update_report.newly_covered_area,
+                "coverage_rate": coverage_update_report.coverage_rate,
+                "coverage_rate_delta": coverage_update_report.coverage_rate_delta,
+            }
+        )
     if data_contract_report is not None:
         summary["data_contract"] = data_contract_report
     if scored_goals:
@@ -350,6 +389,9 @@ def render_closure_report(
                 "risk": goal.candidate.risk,
                 "path_cost": goal.candidate.path_cost,
                 "energy_cost": goal.candidate.energy_cost,
+                "coverage_area": goal.candidate.coverage_area,
+                "expected_new_coverage_area": goal.candidate.expected_new_coverage_area,
+                "expected_coverage_rate_delta": goal.candidate.expected_coverage_rate_delta,
             }
             for goal in scored_goals
         ]

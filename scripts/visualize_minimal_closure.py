@@ -10,7 +10,12 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
+from dev_platform_constraints.confidence import (
+    default_confidence_config_path,
+    load_confidence_weights,
+    update_confidence_from_observation,
+    update_coverage_from_observation,
+)
 from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.exploration import generate_exploration_candidates, rank_exploration_goals
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
@@ -47,6 +52,12 @@ def main() -> None:
         recency_time_constant=10.0,
         weights=confidence_weights,
     )
+    coverage_report = update_coverage_from_observation(
+        grid,
+        platform,
+        observer_cell=(0, grid.height // 2),
+        heading_deg=0.0,
+    )
     constraints = generate_hard_constraints(grid, platform)
     generate_costmap(grid, constraints, platform)
     validation_report = validate_grid_map(grid)
@@ -73,6 +84,7 @@ def main() -> None:
         Path(args.output_dir),
         title=f"最小闭环可视化 - {platform.name}",
         confidence_update_report=confidence_report,
+        coverage_update_report=coverage_report,
         data_contract_report=build_data_contract_report(grid, validation_report),
         scored_goals=scored_goals,
     )

@@ -9,7 +9,7 @@
 - `constraints`：硬约束摘要，包含违规模格数、可通行比例和约束原因计数。
 - `top_goals`：Top-K 离散探索目标，稳定字段为 `cell`、`utility` 和 `reachable`。
 - `top_sequences`：Top 多步目标序列，稳定字段为 `cells`、`utility` 和 `coverage_area`。
-- `observation_update`：观测更新摘要，沿用当前报告中的可信度均值、`delta_c`、可见格和更新格计数字段。
+- `observation_update`：观测更新摘要，沿用当前报告中的可信度均值、`delta_c`、可见格和更新格计数字段；覆盖率统计作为实验字段追加。
 
 这些字段由 `MODEL_EXPLORER_STABLE_FIELDS` 常量和契约测试保护。`model-explorer-contract/v1` 版本内不得删除或改名这些顶层字段；如需要新增解释性指标，默认进入 `experimental_fields`。
 
@@ -20,6 +20,18 @@
 - `top_goals.information_gain`
 - `top_goals.value`
 - `top_goals.confidence_gain`
+- `top_goals.risk`
+- `top_goals.path_cost`
+- `top_goals.energy_cost`
+- `top_goals.coverage_area`
+- `top_goals.expected_new_coverage_area`
+- `top_goals.expected_coverage_rate_delta`
+- `observation_update.total_valid_area`
+- `observation_update.covered_valid_area`
+- `observation_update.coverage_rate`
+- `observation_update.coverage_rate_delta`
+- `observation_update.total_valid_cell_count`
+- `observation_update.covered_valid_cell_count`
 - `top_sequences.delta_c`
 - `top_sequences.value_coverage`
 - `top_sequences.risk`

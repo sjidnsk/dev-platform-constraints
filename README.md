@@ -26,7 +26,7 @@
 
 - P0：已完成，包含栅格数据契约、地形特征、平台配置、硬约束、非负代价图和 A* 最小闭环。
 - P1：已达到可运行研究原型阶段，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、可配置多场景可信度权重消融脚本、最小贝叶斯状态后验、离散地形类别后验和 JSON 可配置类别观测似然。
-- P2：已达到可运行研究原型阶段，提供离散候选观测目标生成与排序起点，候选收益按传感器 footprint 估计，并支持两步离散 lookahead、离线多步目标序列评估、序列去重覆盖和风险/不可达解释；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
+- P2：已达到可运行研究原型阶段，提供离散候选观测目标生成与排序起点，候选收益按传感器 footprint 和 `coverage_mask` 新增覆盖估计，并支持两步离散 lookahead、离线多步目标序列评估、序列去重覆盖和风险/不可达解释；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
 - 生成数据：scripts/generate_example_data.py 是生成型脚本，用于刷新开发示例数据，不是核心运行依赖；生成的 `data/sample_grid.npz` 不提交版本库。
 - 当前边界内完成度：按 `PROJECT_BOUNDARY.md` 衡量约 `95%`；剩余约 `5%` 主要留给真实/半真实外部数据接入和上层 `model-explorer` 联调反馈。
 
@@ -60,8 +60,8 @@ python scripts\generate_example_data.py
 预期结果：
 
 - 单元测试输出 `OK`。
-- `scripts\run_minimal_closure.py` 输出 JSON 摘要，其中 `validation_valid` 和 `path_reachable` 均为 `true`，并包含 `data_contract`、`confidence_delta_c`、低可信区域面积和局部观测更新指标。
-- `scripts\run_confidence_ablation.py` 输出 JSON/CSV 数据报告和 HTML/PNG 可视化报告，比较不同可信度权重在可配置多场景下对路径代价、`ΔC`、低可信高风险路径比例、配置胜率、风险冲突命中率和 Top-K 探索目标稳定性的影响。
+- `scripts\run_minimal_closure.py` 输出 JSON 摘要，其中 `validation_valid` 和 `path_reachable` 均为 `true`，并包含 `data_contract`、`confidence_delta_c`、低可信区域面积、局部观测更新指标、`coverage_rate` 和 `coverage_rate_delta`。
+- `scripts\run_confidence_ablation.py` 输出 JSON/CSV 数据报告和 HTML/PNG 可视化报告，比较不同可信度权重在可配置多场景下对路径代价、`ΔC`、覆盖率、低可信高风险路径比例、配置胜率、风险冲突命中率和 Top-K 探索目标稳定性的影响。
 - `scripts\generate_npz_validation_maps.py` 生成固定种子的外部 `.npz` 验证地图；生成物位于 `data/validation_maps/`，不提交版本库。
 - `configs\ablation\npz_validation_scenarios.json` 可驱动 `npz_grid` 外部地图矩阵，验证 `.npz` 输入、类别似然配置和 P2 序列解释在外部地图上的稳定性。
 - `scripts\generate_example_data.py` 写入 `data/sample_grid.npz`，输出写入路径和图层列表。
@@ -122,8 +122,9 @@ python scripts\visualize_minimal_closure.py --output-dir outputs\visualization -
 - 路径与约束摘要：可达性、路径节点数、路径总代价、硬约束违规数和低可信高风险路径比例。
 - 地图与代价摘要：栅格尺寸、分辨率和可通行代价范围。
 - 可信度更新摘要：更新前后平均可信度、低可信区域面积、`ΔC`、可见栅格数和已更新栅格数。
+- 覆盖率摘要：有效栅格数、累计已覆盖栅格数、新增覆盖栅格数、累计覆盖面积、覆盖率和覆盖率增量。
 - 数据契约摘要：图层数量、缺失核心图层数、契约错误数和契约警告数。
-- 探索目标摘要：Top-K 候选目标的栅格、效用、可达性、信息增益、价值、可信度提升、风险和路径代价。
+- 探索目标摘要：Top-K 候选目标的栅格、效用、可达性、信息增益、价值、可信度提升、风险、路径代价、总覆盖面积、预计新增覆盖面积和预计覆盖率增量。
 - 约束原因计数：无效、坡度、障碍、障碍高度和禁行区触发次数。
 
 最小闭环脚本会执行：
@@ -133,11 +134,12 @@ python scripts\visualize_minimal_closure.py --output-dir outputs\visualization -
 3. 加载玉兔二号近似平台配置。
 4. 加载可信度融合权重配置。
 5. 模拟一次局部观测并更新 `confidence`。
-6. 生成硬约束掩膜。
-7. 生成非负 `cost` 和独立的 `traversability`。
-8. 运行 A* 验证起终点可达性。
-9. 生成候选探索目标并按效用排序。
-10. 输出 JSON 摘要、数据契约报告和 Top-K 探索目标。
+6. 更新运行时 `coverage_mask` 并输出覆盖率指标。
+7. 生成硬约束掩膜。
+8. 生成非负 `cost` 和独立的 `traversability`。
+9. 运行 A* 验证起终点可达性。
+10. 生成候选探索目标并按效用排序。
+11. 输出 JSON 摘要、数据契约报告和 Top-K 探索目标。
 
 运行可信度权重消融实验：
 
@@ -154,7 +156,7 @@ python scripts\run_confidence_ablation.py --output-dir outputs\ablation
 `outputs\ablation\confidence_ablation.json`、`outputs\ablation\confidence_ablation.csv`、
 `outputs\ablation\confidence_ablation.png` 和 `outputs\ablation\confidence_ablation.html`。
 JSON 报告包含 `scenarios`、逐次 `runs`、配置级 `aggregate` 和 `recommendation`；CSV 保留逐次实验记录。
-HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、配置胜率、风险冲突命中率、Top-K 稳定性、序列目标稳定性和逐场景 Top-K 探索目标。
+HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、覆盖率、配置胜率、风险冲突命中率、Top-K 稳定性、序列目标稳定性和逐场景 Top-K 探索目标。
 可通过 `--terrain-likelihood-config configs\confidence\terrain_likelihood_default.json` 显式指定离散地形类别观测似然配置；也可以在场景配置顶层设置
 `terrain_likelihood_config`，命令行参数优先级更高。
 
@@ -183,6 +185,7 @@ python scripts\run_confidence_ablation.py --scenario-config configs\ablation\npz
 
 - 外部地图输入与验证集：消融场景支持 `map_source.kind = "npz_grid"`，从 `.npz` 地图包读取 `elevation`、`obstacle`、`obstacle_height`、`illumination`、`confidence`、`value` 和 `valid_mask`；新增 `scripts/generate_npz_validation_maps.py` 和 `configs/ablation/npz_validation_scenarios.json`，用于固定复现三类外部地图验证输入。
 - P1 类别后验和似然标定：新增 `TerrainLikelihoodRules`、`compute_terrain_category_likelihood(...)`、`load_terrain_likelihood_rules(...)` 和 `configs/confidence/terrain_likelihood_default.json`，从坡度、崎岖度、障碍概率和光照层生成 `safe_regolith`、`rough`、`obstacle`、`shadow_risk` 四类观测似然，再由类别后验熵派生 `model` 可信度分量。
+- 覆盖率状态维护：新增运行时 `coverage_mask`、覆盖率更新和观测覆盖收益估计能力，只统计 `valid_mask` 内累计唯一可见栅格；候选目标同步输出 `expected_new_coverage_area` 和 `expected_coverage_rate_delta`，供上层 `model-explorer` 做覆盖率优先排序。
 - P2 序列解释：`evaluate_goal_sequences(...)` 输出去重后的序列覆盖面积、每段路径代价、累计风险、不可达原因和风险原因；消融 JSON/CSV/HTML 同步保留 Top 序列解释字段。
 - `model-explorer` 对接：稳定 JSON 契约由 `build_model_explorer_contract(...)` 生成，字段说明见 `docs/model-explorer-interface.md`，完整示例见 `docs/model-explorer-contract-example.json`，最小可消费示例见 `docs/model-explorer-minimal-example.json`。
 

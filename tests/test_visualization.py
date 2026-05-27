@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from dev_platform_constraints.confidence import ConfidenceUpdateReport
+from dev_platform_constraints.confidence import ConfidenceUpdateReport, CoverageUpdateReport
 from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.exploration import CandidateGoal, rank_exploration_goals
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
@@ -50,6 +50,20 @@ class VisualizationTests(unittest.TestCase):
             visible_cell_count=12,
             updated_cell_count=10,
         )
+        coverage_report = CoverageUpdateReport(
+            total_valid_cell_count=160,
+            covered_valid_cell_count_before=10,
+            covered_valid_cell_count=22,
+            newly_covered_cell_count=12,
+            total_valid_area=40.0,
+            covered_valid_area_before=2.5,
+            covered_valid_area=5.5,
+            newly_covered_area=3.0,
+            coverage_rate_before=0.0625,
+            coverage_rate=0.1375,
+            coverage_rate_delta=0.075,
+            visible_cell_count=12,
+        )
         scored_goals = rank_exploration_goals(
             (
                 CandidateGoal(cell=(3, 4), information_gain=0.8, value=0.9, confidence_gain=0.7, risk=0.2, path_cost=4.0),
@@ -63,6 +77,7 @@ class VisualizationTests(unittest.TestCase):
             output_dir,
             title="测试可视化",
             confidence_update_report=confidence_report,
+            coverage_update_report=coverage_report,
             data_contract_report=data_contract,
             scored_goals=scored_goals,
         )
@@ -80,6 +95,8 @@ class VisualizationTests(unittest.TestCase):
         self.assertIn("硬约束违规数", html)
         self.assertIn("可信度更新摘要", html)
         self.assertIn("可信度正向提升总量", html)
+        self.assertIn("覆盖率摘要", html)
+        self.assertIn("覆盖率增量", html)
         self.assertIn("数据契约摘要", html)
         self.assertIn("契约错误数", html)
         self.assertIn("探索目标摘要", html)
@@ -136,6 +153,8 @@ class VisualizationTests(unittest.TestCase):
         self.assertIn("confidence_mean_before", summary)
         self.assertIn("confidence_mean_after", summary)
         self.assertIn("confidence_delta_c", summary)
+        self.assertIn("coverage_rate", summary)
+        self.assertIn("coverage_rate_delta", summary)
         self.assertIn("low_confidence_high_risk_path_ratio", summary)
         self.assertIn("data_contract", summary)
         self.assertIn("top_exploration_goals", summary)
@@ -145,6 +164,7 @@ class VisualizationTests(unittest.TestCase):
 
         html = html_path.read_text(encoding="utf-8")
         self.assertIn("可信度更新摘要", html)
+        self.assertIn("覆盖率摘要", html)
         self.assertIn("数据契约摘要", html)
         self.assertIn("探索目标摘要", html)
         self.assertNotIn("confidence_delta_c", html)

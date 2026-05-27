@@ -8,6 +8,7 @@ from dev_platform_constraints.exploration import (
     generate_exploration_candidates,
     rank_exploration_goals,
 )
+from dev_platform_constraints.confidence import update_coverage_from_observation
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import ParameterValue, PlatformParameters
@@ -198,6 +199,58 @@ class ExplorationGoalTests(unittest.TestCase):
         occluded_order = [scored.candidate.cell for scored in rank_exploration_goals(occluded_candidates)]
         self.assertGreater(open_target.confidence_gain, occluded_target.confidence_gain)
         self.assertLess(open_order.index((3, 3)), occluded_order.index((3, 3)))
+
+    def test_generate_candidates_reports_expected_new_coverage_after_existing_coverage(self) -> None:
+        grid = generate_sample_grid(width=10, height=7, resolution=1.0)
+        derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
+        grid.layers["confidence"][:] = 0.9
+        grid.layers["value"][:] = 0.0
+        grid.layers["confidence"][3, 4] = 0.1
+        grid.layers["value"][3, 4] = 1.0
+        grid.layers["confidence"][3, 7] = 0.1
+        grid.layers["value"][3, 7] = 1.0
+        platform = self.sensor_platform(sensor_range=4.0, sensor_fov=70.0)
+        update_coverage_from_observation(grid, platform, observer_cell=(4, 3), heading_deg=0.0)
+        constraints = generate_hard_constraints(grid, platform)
+        generate_costmap(grid, constraints, platform)
+
+        candidates = generate_exploration_candidates(
+            grid,
+            constraints,
+            start=(0, 3),
+            platform=platform,
+            max_candidates=50,
+        )
+
+        covered_target = next(candidate for candidate in candidates if candidate.cell == (4, 3))
+        fresh_target = next(candidate for candidate in candidates if candidate.cell == (7, 3))
+        self.assertGreater(covered_target.coverage_area, 0.0)
+        self.assertGreater(len(covered_target.coverage_cells), 0)
+        self.assertLess(covered_target.expected_new_coverage_area, covered_target.coverage_area)
+        self.assertGreater(fresh_target.expected_new_coverage_area, covered_target.expected_new_coverage_area)
+        self.assertGreater(fresh_target.expected_coverage_rate_delta, covered_target.expected_coverage_rate_delta)
+
+    def test_generate_candidates_uses_new_coverage_to_seed_top_candidates(self) -> None:
+        grid = generate_sample_grid(width=12, height=7, resolution=1.0)
+        derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
+        grid.layers["confidence"][:] = 0.5
+        grid.layers["value"][:] = 0.0
+        platform = self.sensor_platform(sensor_range=5.0, sensor_fov=90.0)
+        update_coverage_from_observation(grid, platform, observer_cell=(2, 3), heading_deg=0.0)
+        constraints = generate_hard_constraints(grid, platform)
+        generate_costmap(grid, constraints, platform)
+
+        candidates = generate_exploration_candidates(
+            grid,
+            constraints,
+            start=(0, 3),
+            platform=platform,
+            max_candidates=5,
+        )
+
+        self.assertTrue(candidates)
+        self.assertTrue(any(candidate.expected_new_coverage_area > 0.0 for candidate in candidates))
+        self.assertTrue(all(candidate.coverage_cells for candidate in candidates))
 
     def test_evaluate_goal_sequences_penalizes_unreachable_and_high_risk_sequences(self) -> None:
         goals = (

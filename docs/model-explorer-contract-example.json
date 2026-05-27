@@ -9,6 +9,7 @@
     "layers": [
       "confidence",
       "cost",
+      "coverage_mask",
       "elevation",
       "illumination",
       "obstacle",
@@ -41,7 +42,10 @@
       "confidence_gain": 0.55,
       "risk": 0.18,
       "path_cost": 13.5,
-      "coverage_area": 8.75
+      "energy_cost": 15.93,
+      "coverage_area": 8.75,
+      "expected_new_coverage_area": 6.25,
+      "expected_coverage_rate_delta": 0.0390625
     }
   ],
   "top_sequences": [
@@ -65,7 +69,15 @@
     "mean_confidence_after": 0.76,
     "delta_c": 8.2,
     "visible_cell_count": 46,
-    "updated_cell_count": 42
+    "updated_cell_count": 42,
+    "total_valid_area": 160.0,
+    "covered_valid_area": 28.5,
+    "newly_covered_area": 11.5,
+    "coverage_rate": 0.178125,
+    "coverage_rate_delta": 0.071875,
+    "total_valid_cell_count": 640,
+    "covered_valid_cell_count": 114,
+    "newly_covered_cell_count": 46
   },
   "stable_fields": [
     "schema_version",
@@ -90,6 +102,18 @@
     "top_goals.information_gain",
     "top_goals.value",
     "top_goals.confidence_gain",
+    "top_goals.risk",
+    "top_goals.path_cost",
+    "top_goals.energy_cost",
+    "top_goals.coverage_area",
+    "top_goals.expected_new_coverage_area",
+    "top_goals.expected_coverage_rate_delta",
+    "observation_update.total_valid_area",
+    "observation_update.covered_valid_area",
+    "observation_update.coverage_rate",
+    "observation_update.coverage_rate_delta",
+    "observation_update.total_valid_cell_count",
+    "observation_update.covered_valid_cell_count",
     "top_sequences.delta_c",
     "top_sequences.value_coverage",
     "top_sequences.risk",

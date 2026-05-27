@@ -43,9 +43,16 @@ class ModelExplorerContractTests(unittest.TestCase):
         self.assertIn("stable_fields", contract)
         self.assertIn("experimental_fields", contract)
         self.assertIn("cell", contract["top_goals"][0])
+        self.assertIn("coverage_area", contract["top_goals"][0])
+        self.assertIn("expected_new_coverage_area", contract["top_goals"][0])
+        self.assertIn("expected_coverage_rate_delta", contract["top_goals"][0])
+        self.assertIn("energy_cost", contract["top_goals"][0])
         self.assertIn("coverage_area", contract["top_sequences"][0])
         self.assertIn("segment_path_costs", contract["top_sequences"][0])
         self.assertEqual(contract["stable_fields"], list(MODEL_EXPLORER_STABLE_FIELDS))
+        self.assertIn("top_goals.expected_new_coverage_area", contract["experimental_fields"])
+        self.assertIn("top_goals.expected_coverage_rate_delta", contract["experimental_fields"])
+        self.assertIn("top_goals.energy_cost", contract["experimental_fields"])
 
     def test_documented_contract_example_matches_stable_sections(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]

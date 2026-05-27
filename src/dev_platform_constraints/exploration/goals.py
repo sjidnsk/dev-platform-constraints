@@ -25,6 +25,8 @@ class CandidateGoal:
     energy_cost: float = 0.0
     reachable: bool = True
     coverage_area: float = 1.0
+    expected_new_coverage_area: float = 0.0
+    expected_coverage_rate_delta: float = 0.0
     coverage_cells: tuple[tuple[int, int], ...] = tuple()
 
 
@@ -120,14 +122,38 @@ def _footprint_gain_layers(
     frontier: np.ndarray,
     lookahead_steps: int,
     use_simple_occlusion: bool,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    dict[tuple[int, int], tuple[tuple[int, int], ...]],
+]:
     footprint_information = np.zeros(grid.shape, dtype=float)
     footprint_value = np.zeros(grid.shape, dtype=float)
     footprint_confidence_gain = np.zeros(grid.shape, dtype=float)
     footprint_coverage_area = np.zeros(grid.shape, dtype=float)
+    footprint_new_coverage_area = np.zeros(grid.shape, dtype=float)
+    footprint_new_coverage_rate_delta = np.zeros(grid.shape, dtype=float)
+    footprint_cells: dict[tuple[int, int], tuple[tuple[int, int], ...]] = {}
     cell_area = grid.resolution * grid.resolution
+    coverage_mask = grid.layers.get("coverage_mask", np.zeros(grid.shape, dtype=bool)).astype(bool, copy=False)
+    total_valid_count = int(np.count_nonzero(valid))
 
-    def footprint_scores(cell: tuple[int, int], heading_reference: tuple[int, int]) -> tuple[float, float, float]:
+    def cells_from_mask(mask: np.ndarray) -> tuple[tuple[int, int], ...]:
+        return tuple((int(x), int(y)) for y, x in np.argwhere(mask))
+
+    def rate_delta(new_count: int) -> float:
+        if total_valid_count <= 0:
+            return 0.0
+        return float(new_count / total_valid_count)
+
+    def footprint_scores(
+        cell: tuple[int, int],
+        heading_reference: tuple[int, int],
+    ) -> tuple[float, float, float, float, float, tuple[tuple[int, int], ...]]:
         model = compute_observation_model(
             grid,
             platform,
@@ -138,11 +164,28 @@ def _footprint_gain_layers(
         footprint_weight = np.asarray(model.quality_layer, dtype=float) * valid
         if not np.any(footprint_weight > 0.0):
             x, y = cell
-            return float(confidence_gain[y, x]), float(value[y, x]), cell_area
+            fallback_mask = np.zeros(grid.shape, dtype=bool)
+            fallback_mask[y, x] = bool(valid[y, x])
+            fallback_cells = cells_from_mask(fallback_mask)
+            new_count = int(np.count_nonzero(fallback_mask & ~coverage_mask))
+            return (
+                float(confidence_gain[y, x]),
+                float(value[y, x]),
+                float(len(fallback_cells) * cell_area),
+                float(new_count * cell_area),
+                rate_delta(new_count),
+                fallback_cells,
+            )
+        footprint_mask = (footprint_weight > 0.0) & valid
+        coverage_cells = cells_from_mask(footprint_mask)
+        new_count = int(np.count_nonzero(footprint_mask & ~coverage_mask))
         return (
             max(float(confidence_gain[cell[1], cell[0]]), float(np.max(confidence_gain * footprint_weight))),
             max(float(value[cell[1], cell[0]]), float(np.max(value * footprint_weight))),
-            float(np.count_nonzero(footprint_weight > 0.0) * cell_area),
+            float(len(coverage_cells) * cell_area),
+            float(new_count * cell_area),
+            rate_delta(new_count),
+            coverage_cells,
         )
 
     for y in range(grid.height):
@@ -150,7 +193,14 @@ def _footprint_gain_layers(
             if not valid[y, x]:
                 continue
             cell = (x, y)
-            direct_confidence_gain, direct_value, direct_coverage_area = footprint_scores(cell, start)
+            (
+                direct_confidence_gain,
+                direct_value,
+                direct_coverage_area,
+                direct_new_coverage_area,
+                direct_new_coverage_rate_delta,
+                direct_coverage_cells,
+            ) = footprint_scores(cell, start)
             if lookahead_steps >= 2:
                 model = compute_observation_model(
                     grid,
@@ -164,17 +214,39 @@ def _footprint_gain_layers(
                     downstream_cell = (int(downstream_x), int(downstream_y))
                     if downstream_cell == cell:
                         continue
-                    downstream_confidence_gain, downstream_value, downstream_coverage_area = footprint_scores(downstream_cell, cell)
+                    (
+                        downstream_confidence_gain,
+                        downstream_value,
+                        downstream_coverage_area,
+                        downstream_new_coverage_area,
+                        downstream_new_coverage_rate_delta,
+                        downstream_coverage_cells,
+                    ) = footprint_scores(downstream_cell, cell)
                     direct_confidence_gain = max(direct_confidence_gain, downstream_confidence_gain)
                     direct_value = max(direct_value, downstream_value)
-                    direct_coverage_area = max(direct_coverage_area, downstream_coverage_area)
+                    if downstream_coverage_area > direct_coverage_area:
+                        direct_coverage_area = downstream_coverage_area
+                        direct_new_coverage_area = downstream_new_coverage_area
+                        direct_new_coverage_rate_delta = downstream_new_coverage_rate_delta
+                        direct_coverage_cells = downstream_coverage_cells
             footprint_confidence_gain[y, x] = direct_confidence_gain
             footprint_value[y, x] = direct_value
             footprint_coverage_area[y, x] = direct_coverage_area
+            footprint_new_coverage_area[y, x] = direct_new_coverage_area
+            footprint_new_coverage_rate_delta[y, x] = direct_new_coverage_rate_delta
+            footprint_cells[cell] = direct_coverage_cells
             footprint_information[y, x] = float(
                 np.clip(0.7 * footprint_confidence_gain[y, x] + 0.3 * frontier[y, x], 0.0, 1.0)
             )
-    return footprint_information, footprint_value, footprint_confidence_gain, footprint_coverage_area
+    return (
+        footprint_information,
+        footprint_value,
+        footprint_confidence_gain,
+        footprint_coverage_area,
+        footprint_new_coverage_area,
+        footprint_new_coverage_rate_delta,
+        footprint_cells,
+    )
 
 
 def generate_exploration_candidates(
@@ -207,7 +279,15 @@ def generate_exploration_candidates(
     confidence_gain = np.clip(1.0 - confidence, 0.0, 1.0)
     risk = _candidate_risk(grid, platform)
     frontier = _frontier_score(valid, passable)
-    footprint_information, footprint_value, footprint_confidence_gain, footprint_coverage_area = _footprint_gain_layers(
+    (
+        footprint_information,
+        footprint_value,
+        footprint_confidence_gain,
+        footprint_coverage_area,
+        footprint_new_coverage_area,
+        footprint_new_coverage_rate_delta,
+        footprint_cells,
+    ) = _footprint_gain_layers(
         grid,
         start,
         platform,
@@ -220,7 +300,12 @@ def generate_exploration_candidates(
     )
     seed_score = np.where(
         valid,
-        0.35 * footprint_confidence_gain + 0.30 * footprint_value + 0.15 * frontier + 0.10 * (1.0 - risk) + 0.10 * confidence_gain,
+        0.30 * footprint_confidence_gain
+        + 0.25 * footprint_value
+        + 0.15 * frontier
+        + 0.15 * footprint_new_coverage_rate_delta
+        + 0.10 * (1.0 - risk)
+        + 0.05 * confidence_gain,
         -1.0,
     )
 
@@ -259,6 +344,9 @@ def generate_exploration_candidates(
                 energy_cost=float(path_cost * (1.0 + risk[y, x])),
                 reachable=reachable,
                 coverage_area=float(footprint_coverage_area[y, x]),
+                expected_new_coverage_area=float(footprint_new_coverage_area[y, x]),
+                expected_coverage_rate_delta=float(footprint_new_coverage_rate_delta[y, x]),
+                coverage_cells=footprint_cells.get(cell, tuple()),
             )
         )
     return tuple(candidates)

@@ -45,8 +45,12 @@ class DataContractReportTests(unittest.TestCase):
         summary = json.loads(result.stdout)
 
         self.assertIn("data_contract", summary)
+        self.assertIn("coverage_rate", summary)
+        self.assertIn("coverage_rate_delta", summary)
+        self.assertGreater(summary["covered_valid_cell_count"], 0)
         self.assertTrue(summary["data_contract"]["is_valid"])
         self.assertIn("confidence", summary["data_contract"]["layers"])
+        self.assertIn("coverage_mask", summary["data_contract"]["layers"])
         self.assertEqual(summary["data_contract"]["issue_summary"]["errors"], 0)
 
 

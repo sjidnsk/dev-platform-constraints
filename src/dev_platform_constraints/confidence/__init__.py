@@ -1,5 +1,12 @@
 """可信度指标计算、融合和局部观测更新。"""
 
+from .coverage import (
+    CoverageEstimate,
+    CoverageUpdateReport,
+    ensure_coverage_mask,
+    estimate_observation_coverage,
+    update_coverage_from_observation,
+)
 from .metrics import (
     ConfidenceComponent,
     ConfidenceUpdateReport,
@@ -32,6 +39,8 @@ __all__ = [
     "BayesianStateLayer",
     "CategoricalBayesianStateLayer",
     "ConfidenceComponent",
+    "CoverageEstimate",
+    "CoverageUpdateReport",
     "ConfidenceUpdateReport",
     "ConfidenceWeights",
     "ObservationModelResult",
@@ -47,10 +56,13 @@ __all__ = [
     "compute_recency_confidence",
     "compute_resolution_confidence",
     "fuse_confidence",
+    "ensure_coverage_mask",
+    "estimate_observation_coverage",
     "load_confidence_weights",
     "load_terrain_likelihood_rules",
     "update_categorical_posterior",
     "update_obstacle_posterior",
     "update_traversability_posterior",
     "update_confidence_from_observation",
+    "update_coverage_from_observation",
 ]

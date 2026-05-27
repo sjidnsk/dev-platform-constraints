@@ -9,6 +9,8 @@ class PackageStructureTests(unittest.TestCase):
             ConfidenceComponent,
             ConfidenceUpdateReport,
             ConfidenceWeights,
+            CoverageEstimate,
+            CoverageUpdateReport,
             ObservationModelResult,
             TerrainLikelihoodRules,
             compute_terrain_category_likelihood,
@@ -16,12 +18,15 @@ class PackageStructureTests(unittest.TestCase):
             compute_observation_model,
             default_terrain_likelihood_config_path,
             derive_confidence_from_posterior,
+            estimate_observation_coverage,
             fuse_confidence,
+            ensure_coverage_mask,
             load_confidence_weights,
             load_terrain_likelihood_rules,
             update_obstacle_posterior,
             update_traversability_posterior,
             update_confidence_from_observation,
+            update_coverage_from_observation,
         )
         from dev_platform_constraints.core import CORE_LAYERS, GridMap, LayerMetadata, validate_grid_map
         from dev_platform_constraints.mapping import CostWeights, ReasonCode, generate_costmap, generate_hard_constraints
@@ -54,6 +59,9 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue(callable(load_terrain_likelihood_rules))
         self.assertTrue(callable(compute_observation_confidence))
         self.assertTrue(callable(compute_observation_model))
+        self.assertTrue(callable(ensure_coverage_mask))
+        self.assertTrue(callable(estimate_observation_coverage))
+        self.assertTrue(callable(update_coverage_from_observation))
         self.assertTrue(callable(fuse_confidence))
         self.assertTrue(callable(load_confidence_weights))
         self.assertTrue(callable(update_obstacle_posterior))
@@ -74,6 +82,8 @@ class PackageStructureTests(unittest.TestCase):
         self.assertEqual(PlatformParameters.__name__, "PlatformParameters")
         self.assertEqual(ConfidenceComponent.__name__, "ConfidenceComponent")
         self.assertEqual(ConfidenceWeights.__name__, "ConfidenceWeights")
+        self.assertEqual(CoverageEstimate.__name__, "CoverageEstimate")
+        self.assertEqual(CoverageUpdateReport.__name__, "CoverageUpdateReport")
         self.assertEqual(TerrainLikelihoodRules.__name__, "TerrainLikelihoodRules")
         self.assertEqual(ConfidenceUpdateReport.__name__, "ConfidenceUpdateReport")
         self.assertEqual(ObservationModelResult.__name__, "ObservationModelResult")

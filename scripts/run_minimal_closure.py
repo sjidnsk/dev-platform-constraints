@@ -10,7 +10,12 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
+from dev_platform_constraints.confidence import (
+    default_confidence_config_path,
+    load_confidence_weights,
+    update_confidence_from_observation,
+    update_coverage_from_observation,
+)
 from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
@@ -40,6 +45,12 @@ def main() -> None:
         elapsed_time=2.0,
         recency_time_constant=10.0,
         weights=confidence_weights,
+    )
+    coverage_report = update_coverage_from_observation(
+        grid,
+        platform,
+        observer_cell=(0, grid.height // 2),
+        heading_deg=0.0,
     )
     constraints = generate_hard_constraints(grid, platform)
     generate_costmap(grid, constraints, platform)
@@ -75,6 +86,14 @@ def main() -> None:
         "confidence_delta_c": confidence_report.delta_c,
         "confidence_visible_cell_count": confidence_report.visible_cell_count,
         "confidence_updated_cell_count": confidence_report.updated_cell_count,
+        "total_valid_area": coverage_report.total_valid_area,
+        "covered_valid_area": coverage_report.covered_valid_area,
+        "newly_covered_area": coverage_report.newly_covered_area,
+        "coverage_rate": coverage_report.coverage_rate,
+        "coverage_rate_delta": coverage_report.coverage_rate_delta,
+        "total_valid_cell_count": coverage_report.total_valid_cell_count,
+        "covered_valid_cell_count": coverage_report.covered_valid_cell_count,
+        "newly_covered_cell_count": coverage_report.newly_covered_cell_count,
     }
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     if not report.is_valid:

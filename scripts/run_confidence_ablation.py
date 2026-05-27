@@ -30,6 +30,7 @@ from dev_platform_constraints.confidence import (
     load_terrain_likelihood_rules,
     update_categorical_posterior,
     update_confidence_from_observation,
+    update_coverage_from_observation,
 )
 from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.exploration import evaluate_goal_sequences, generate_exploration_candidates, rank_exploration_goals
@@ -141,6 +142,10 @@ def _apply_observation_updates(grid, platform, scenario: AblationScenario, weigh
     before = grid.require_layer("confidence").copy()
     visible_cell_count = 0
     updated_cell_count = 0
+    coverage_rate_delta = 0.0
+    newly_covered_cell_count = 0
+    newly_covered_area = 0.0
+    final_coverage_report = None
     for observation in scenario.observations:
         report = update_confidence_from_observation(
             grid,
@@ -153,6 +158,16 @@ def _apply_observation_updates(grid, platform, scenario: AblationScenario, weigh
         )
         visible_cell_count += report.visible_cell_count
         updated_cell_count += report.updated_cell_count
+        final_coverage_report = update_coverage_from_observation(
+            grid,
+            platform,
+            observer_cell=observation.observer_cell,
+            heading_deg=observation.heading_deg,
+            use_simple_occlusion=scenario.use_simple_occlusion,
+        )
+        coverage_rate_delta += final_coverage_report.coverage_rate_delta
+        newly_covered_cell_count += final_coverage_report.newly_covered_cell_count
+        newly_covered_area += final_coverage_report.newly_covered_area
 
     after = grid.require_layer("confidence")
     valid_mask = grid.layers.get("valid_mask", np.ones(grid.shape, dtype=bool)).astype(bool, copy=False)
@@ -160,6 +175,29 @@ def _apply_observation_updates(grid, platform, scenario: AblationScenario, weigh
     before_valid = before[valid_mask]
     after_valid = after[valid_mask]
     delta = after - before
+    coverage_payload = (
+        {
+            "total_valid_area": final_coverage_report.total_valid_area,
+            "covered_valid_area": final_coverage_report.covered_valid_area,
+            "newly_covered_area": newly_covered_area,
+            "coverage_rate": final_coverage_report.coverage_rate,
+            "coverage_rate_delta": coverage_rate_delta,
+            "total_valid_cell_count": final_coverage_report.total_valid_cell_count,
+            "covered_valid_cell_count": final_coverage_report.covered_valid_cell_count,
+            "newly_covered_cell_count": newly_covered_cell_count,
+        }
+        if final_coverage_report is not None
+        else {
+            "total_valid_area": 0.0,
+            "covered_valid_area": 0.0,
+            "newly_covered_area": 0.0,
+            "coverage_rate": 0.0,
+            "coverage_rate_delta": 0.0,
+            "total_valid_cell_count": 0,
+            "covered_valid_cell_count": 0,
+            "newly_covered_cell_count": 0,
+        }
+    )
     return {
         "mean_confidence_before": float(np.mean(before_valid)) if before_valid.size else 0.0,
         "mean_confidence_after": float(np.mean(after_valid)) if after_valid.size else 0.0,
@@ -169,6 +207,7 @@ def _apply_observation_updates(grid, platform, scenario: AblationScenario, weigh
         "delta_c": float(np.sum(np.maximum(delta[valid_mask], 0.0)) * cell_area),
         "visible_cell_count": visible_cell_count,
         "updated_cell_count": updated_cell_count,
+        **coverage_payload,
     }
 
 
@@ -213,6 +252,26 @@ def _sequence_details(goal_sequences) -> list[dict[str, object]]:
             "risk_reasons": list(sequence.risk_reasons),
         }
         for sequence in goal_sequences
+    ]
+
+
+def _goal_details(scored_goals) -> list[dict[str, object]]:
+    return [
+        {
+            "cell": goal.candidate.cell,
+            "utility": goal.utility,
+            "reachable": goal.candidate.reachable,
+            "information_gain": goal.candidate.information_gain,
+            "value": goal.candidate.value,
+            "confidence_gain": goal.candidate.confidence_gain,
+            "risk": goal.candidate.risk,
+            "path_cost": goal.candidate.path_cost,
+            "energy_cost": goal.candidate.energy_cost,
+            "coverage_area": goal.candidate.coverage_area,
+            "expected_new_coverage_area": goal.candidate.expected_new_coverage_area,
+            "expected_coverage_rate_delta": goal.candidate.expected_coverage_rate_delta,
+        }
+        for goal in scored_goals
     ]
 
 
@@ -272,10 +331,19 @@ def _run_single_config(
         "confidence_low_area_before": confidence_report["low_confidence_area_before"],
         "confidence_low_area_after": confidence_report["low_confidence_area_after"],
         "confidence_delta_c": confidence_report["delta_c"],
+        "total_valid_area": confidence_report["total_valid_area"],
+        "covered_valid_area": confidence_report["covered_valid_area"],
+        "newly_covered_area": confidence_report["newly_covered_area"],
+        "coverage_rate": confidence_report["coverage_rate"],
+        "coverage_rate_delta": confidence_report["coverage_rate_delta"],
+        "total_valid_cell_count": confidence_report["total_valid_cell_count"],
+        "covered_valid_cell_count": confidence_report["covered_valid_cell_count"],
+        "newly_covered_cell_count": confidence_report["newly_covered_cell_count"],
         "terrain_model_confidence_mean": terrain_model_confidence_mean,
         "low_confidence_high_risk_path_ratio": _low_confidence_high_risk_path_ratio(grid, plan),
         "top_goal_cells": [goal.candidate.cell for goal in scored_goals],
         "top_goal_utilities": [goal.utility for goal in scored_goals],
+        "top_goal_details": _goal_details(scored_goals),
         "top_goal_sequence_cells": [[goal.cell for goal in sequence.goals] for sequence in goal_sequences],
         "top_goal_sequence_utilities": [sequence.utility for sequence in goal_sequences],
         "top_goal_sequence_details": _sequence_details(goal_sequences),
@@ -302,10 +370,19 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
         "confidence_low_area_before",
         "confidence_low_area_after",
         "confidence_delta_c",
+        "total_valid_area",
+        "covered_valid_area",
+        "newly_covered_area",
+        "coverage_rate",
+        "coverage_rate_delta",
+        "total_valid_cell_count",
+        "covered_valid_cell_count",
+        "newly_covered_cell_count",
         "terrain_model_confidence_mean",
         "low_confidence_high_risk_path_ratio",
         "top_goal_cells",
         "top_goal_utilities",
+        "top_goal_details",
         "top_goal_sequence_cells",
         "top_goal_sequence_utilities",
         "top_goal_sequence_details",
@@ -317,6 +394,7 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
             row = dict(run)
             row["top_goal_cells"] = json.dumps(row["top_goal_cells"], ensure_ascii=False)
             row["top_goal_utilities"] = json.dumps(row["top_goal_utilities"], ensure_ascii=False)
+            row["top_goal_details"] = json.dumps(row["top_goal_details"], ensure_ascii=False)
             row["top_goal_sequence_cells"] = json.dumps(row["top_goal_sequence_cells"], ensure_ascii=False)
             row["top_goal_sequence_utilities"] = json.dumps(row["top_goal_sequence_utilities"], ensure_ascii=False)
             row["top_goal_sequence_details"] = json.dumps(row["top_goal_sequence_details"], ensure_ascii=False)
@@ -394,6 +472,8 @@ def _build_aggregate(runs: list[dict[str, object]], scenarios: list[AblationScen
         config_runs = [run for run in runs if run["confidence_config"] == config]
         path_costs = [float(run["path_total_cost"]) for run in config_runs if run.get("path_total_cost") is not None]
         delta_cs = _float_series(config_runs, "confidence_delta_c")
+        coverage_rates = _float_series(config_runs, "coverage_rate")
+        coverage_rate_deltas = _float_series(config_runs, "coverage_rate_delta")
         low_areas = _float_series(config_runs, "confidence_low_area_after")
         risk_ratios = _float_series(config_runs, "low_confidence_high_risk_path_ratio")
         reference_goals = config_runs[0].get("top_goal_cells") if config_runs else []
@@ -434,6 +514,8 @@ def _build_aggregate(runs: list[dict[str, object]], scenarios: list[AblationScen
                 "path_total_cost_std": _std(path_costs),
                 "confidence_delta_c_mean": _mean(delta_cs),
                 "confidence_delta_c_std": _std(delta_cs),
+                "coverage_rate_mean": _mean(coverage_rates),
+                "coverage_rate_delta_mean": _mean(coverage_rate_deltas),
                 "confidence_low_area_after_mean": _mean(low_areas),
                 "low_confidence_high_risk_path_ratio_mean": _mean(risk_ratios),
                 "risk_conflict_hit_rate": risk_conflict_hit_rate,
@@ -554,6 +636,7 @@ def _write_ablation_html(
         f"<td>{escape(str(run['confidence_config']))}</td>"
         f"<td>{escape(str(run['path_total_cost']))}</td>"
         f"<td>{escape(str(run['confidence_delta_c']))}</td>"
+        f"<td>{escape(str(run['coverage_rate']))}</td>"
         f"<td>{escape(str(run['confidence_low_area_after']))}</td>"
         f"<td>{escape(str(run['low_confidence_high_risk_path_ratio']))}</td>"
         f"<td>{escape(_format_goal_cells(run['top_goal_cells']))}</td>"
@@ -567,6 +650,8 @@ def _write_ablation_html(
         f"<td>{float(item['path_total_cost_mean']):.6g}</td>"
         f"<td>{float(item['path_total_cost_std']):.6g}</td>"
         f"<td>{float(item['confidence_delta_c_mean']):.6g}</td>"
+        f"<td>{float(item['coverage_rate_mean']):.6g}</td>"
+        f"<td>{float(item['coverage_rate_delta_mean']):.6g}</td>"
         f"<td>{escape(str(item['best_path_cost_count']))}</td>"
         f"<td>{float(item['risk_conflict_hit_rate']):.3f}</td>"
         f"<td>{float(item['top_goal_stability']):.3f}</td>"
@@ -618,7 +703,7 @@ def _write_ablation_html(
   <h2>汇总指标</h2>
   <table>
     <thead>
-      <tr><th>配置</th><th>路径总代价均值</th><th>路径总代价标准差</th><th>可信度正向提升总量均值</th><th>配置胜率</th><th>风险冲突命中率</th><th>Top-K 稳定性</th><th>序列目标稳定性</th><th>Top-K 稳定性变化</th><th>首选目标变化次数</th><th>失败场景</th></tr>
+      <tr><th>配置</th><th>路径总代价均值</th><th>路径总代价标准差</th><th>可信度正向提升总量均值</th><th>覆盖率均值</th><th>覆盖率增量均值</th><th>配置胜率</th><th>风险冲突命中率</th><th>Top-K 稳定性</th><th>序列目标稳定性</th><th>Top-K 稳定性变化</th><th>首选目标变化次数</th><th>失败场景</th></tr>
     </thead>
     <tbody>
       {aggregate_rows}
@@ -627,7 +712,7 @@ def _write_ablation_html(
   <h2>实验摘要</h2>
   <table>
     <thead>
-      <tr><th>场景</th><th>配置</th><th>路径总代价</th><th>可信度正向提升总量</th><th>更新后低可信区域面积</th><th>低可信高风险路径比例</th><th>Top-K 探索目标</th><th>Top 序列解释</th></tr>
+      <tr><th>场景</th><th>配置</th><th>路径总代价</th><th>可信度正向提升总量</th><th>覆盖率</th><th>更新后低可信区域面积</th><th>低可信高风险路径比例</th><th>Top-K 探索目标</th><th>Top 序列解释</th></tr>
     </thead>
     <tbody>
       {rows}
