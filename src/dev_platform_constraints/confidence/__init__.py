@@ -17,6 +17,8 @@ from .config import default_confidence_config_path, load_confidence_weights
 from .bayesian import (
     BayesianStateLayer,
     CategoricalBayesianStateLayer,
+    TerrainLikelihoodRules,
+    compute_terrain_category_likelihood,
     derive_confidence_from_categorical_posterior,
     derive_confidence_from_posterior,
     update_categorical_posterior,
@@ -31,6 +33,8 @@ __all__ = [
     "ConfidenceUpdateReport",
     "ConfidenceWeights",
     "ObservationModelResult",
+    "TerrainLikelihoodRules",
+    "compute_terrain_category_likelihood",
     "default_confidence_config_path",
     "derive_confidence_from_categorical_posterior",
     "derive_confidence_from_posterior",

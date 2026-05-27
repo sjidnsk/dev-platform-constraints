@@ -24,6 +24,7 @@ class CandidateGoal:
     path_cost: float
     energy_cost: float = 0.0
     reachable: bool = True
+    coverage_area: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,10 @@ class GoalSequenceEvaluation:
     risk: float
     path_cost: float
     reachable: bool
+    coverage_area: float
+    segment_path_costs: tuple[float, ...]
+    cumulative_risk: float
+    unreachable_reasons: tuple[str, ...]
 
 
 def _normalize(values: tuple[float, ...]) -> tuple[float, ...]:
@@ -113,12 +118,14 @@ def _footprint_gain_layers(
     frontier: np.ndarray,
     lookahead_steps: int,
     use_simple_occlusion: bool,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     footprint_information = np.zeros(grid.shape, dtype=float)
     footprint_value = np.zeros(grid.shape, dtype=float)
     footprint_confidence_gain = np.zeros(grid.shape, dtype=float)
+    footprint_coverage_area = np.zeros(grid.shape, dtype=float)
+    cell_area = grid.resolution * grid.resolution
 
-    def footprint_scores(cell: tuple[int, int], heading_reference: tuple[int, int]) -> tuple[float, float]:
+    def footprint_scores(cell: tuple[int, int], heading_reference: tuple[int, int]) -> tuple[float, float, float]:
         model = compute_observation_model(
             grid,
             platform,
@@ -129,10 +136,11 @@ def _footprint_gain_layers(
         footprint_weight = np.asarray(model.quality_layer, dtype=float) * valid
         if not np.any(footprint_weight > 0.0):
             x, y = cell
-            return float(confidence_gain[y, x]), float(value[y, x])
+            return float(confidence_gain[y, x]), float(value[y, x]), cell_area
         return (
             max(float(confidence_gain[cell[1], cell[0]]), float(np.max(confidence_gain * footprint_weight))),
             max(float(value[cell[1], cell[0]]), float(np.max(value * footprint_weight))),
+            float(np.count_nonzero(footprint_weight > 0.0) * cell_area),
         )
 
     for y in range(grid.height):
@@ -140,7 +148,7 @@ def _footprint_gain_layers(
             if not valid[y, x]:
                 continue
             cell = (x, y)
-            direct_confidence_gain, direct_value = footprint_scores(cell, start)
+            direct_confidence_gain, direct_value, direct_coverage_area = footprint_scores(cell, start)
             if lookahead_steps >= 2:
                 model = compute_observation_model(
                     grid,
@@ -154,15 +162,17 @@ def _footprint_gain_layers(
                     downstream_cell = (int(downstream_x), int(downstream_y))
                     if downstream_cell == cell:
                         continue
-                    downstream_confidence_gain, downstream_value = footprint_scores(downstream_cell, cell)
+                    downstream_confidence_gain, downstream_value, downstream_coverage_area = footprint_scores(downstream_cell, cell)
                     direct_confidence_gain = max(direct_confidence_gain, downstream_confidence_gain)
                     direct_value = max(direct_value, downstream_value)
+                    direct_coverage_area = max(direct_coverage_area, downstream_coverage_area)
             footprint_confidence_gain[y, x] = direct_confidence_gain
             footprint_value[y, x] = direct_value
+            footprint_coverage_area[y, x] = direct_coverage_area
             footprint_information[y, x] = float(
                 np.clip(0.7 * footprint_confidence_gain[y, x] + 0.3 * frontier[y, x], 0.0, 1.0)
             )
-    return footprint_information, footprint_value, footprint_confidence_gain
+    return footprint_information, footprint_value, footprint_confidence_gain, footprint_coverage_area
 
 
 def generate_exploration_candidates(
@@ -195,7 +205,7 @@ def generate_exploration_candidates(
     confidence_gain = np.clip(1.0 - confidence, 0.0, 1.0)
     risk = _candidate_risk(grid, platform)
     frontier = _frontier_score(valid, passable)
-    footprint_information, footprint_value, footprint_confidence_gain = _footprint_gain_layers(
+    footprint_information, footprint_value, footprint_confidence_gain, footprint_coverage_area = _footprint_gain_layers(
         grid,
         start,
         platform,
@@ -246,6 +256,7 @@ def generate_exploration_candidates(
                 path_cost=float(path_cost),
                 energy_cost=float(path_cost * (1.0 + risk[y, x])),
                 reachable=reachable,
+                coverage_area=float(footprint_coverage_area[y, x]),
             )
         )
     return tuple(candidates)
@@ -312,6 +323,8 @@ def evaluate_goal_sequences(
     for length in range(1, max_depth + 1):
         for sequence in permutations(ranked_candidates, length):
             risk = float(max(goal.risk for goal in sequence))
+            segment_path_costs = tuple(float(goal.path_cost) for goal in sequence)
+            unreachable_reasons = tuple(f"unreachable:{goal.cell}" for goal in sequence if not goal.reachable)
             raw_sequences.append(
                 {
                     "goals": sequence,
@@ -320,6 +333,10 @@ def evaluate_goal_sequences(
                     "value_coverage": float(sum(goal.value for goal in sequence)),
                     "risk": risk,
                     "path_cost": float(sum(goal.path_cost for goal in sequence)),
+                    "coverage_area": float(sum(goal.coverage_area for goal in sequence)),
+                    "segment_path_costs": segment_path_costs,
+                    "cumulative_risk": float(sum(goal.risk for goal in sequence)),
+                    "unreachable_reasons": unreachable_reasons,
                     "energy_cost": float(sum(goal.energy_cost for goal in sequence)),
                     "reachable": all(goal.reachable for goal in sequence),
                 }
@@ -353,6 +370,10 @@ def evaluate_goal_sequences(
                 risk=float(item["risk"]),
                 path_cost=float(item["path_cost"]),
                 reachable=bool(item["reachable"]),
+                coverage_area=float(item["coverage_area"]),
+                segment_path_costs=tuple(item["segment_path_costs"]),
+                cumulative_risk=float(item["cumulative_risk"]),
+                unreachable_reasons=tuple(item["unreachable_reasons"]),
             )
         )
     return tuple(sorted(evaluations, key=lambda item: item.utility, reverse=True))

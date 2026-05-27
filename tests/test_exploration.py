@@ -221,7 +221,12 @@ class ExplorationGoalTests(unittest.TestCase):
         self.assertTrue(evaluations[0].reachable)
         self.assertGreater(evaluations[0].delta_c, 0.0)
         self.assertGreater(evaluations[0].value_coverage, 0.0)
+        self.assertGreater(evaluations[0].coverage_area, 0.0)
+        self.assertEqual(len(evaluations[0].segment_path_costs), len(evaluations[0].goals))
+        self.assertGreaterEqual(evaluations[0].cumulative_risk, evaluations[0].risk)
         self.assertTrue(all(not item.reachable or item.utility > -1.0 for item in evaluations))
+        unreachable = next(item for item in evaluations if any(goal.cell == (6, 2) for goal in item.goals))
+        self.assertIn("unreachable:(6, 2)", unreachable.unreachable_reasons)
         self.assertLess(
             max(item.utility for item in evaluations if any(goal.cell == (6, 2) for goal in item.goals)),
             evaluations[0].utility,

@@ -80,8 +80,29 @@ python scripts\visualize_minimal_closure.py --output-dir outputs\visualization -
 
 局限性：当前结果来自六个确定性样例场景和三个固定种子半合成场景，覆盖了不同观测位姿、目标点、地图尺寸、低可信区域分布、价值图分布、简单遮挡、两步 lookahead 和离线多步目标序列，但还没有覆盖真实遥感数据、长序列观测或复杂三维遮挡。
 
+## 本轮增量验证
+
+本轮已完成外部 `.npz` 地图输入、离散地形类别观测似然、P2 多步目标序列解释和 `model-explorer` JSON 契约。消融脚本的逐次 `runs` 现在包含：
+
+- `map_source_kind`：区分 `sample`、`seeded_synthetic` 和 `npz_grid`。
+- `terrain_model_confidence_mean`：由 `safe_regolith`、`rough`、`obstacle`、`shadow_risk` 类别后验熵派生的 `model` 可信度均值。
+- `top_goal_sequence_details`：Top 序列的坐标、`utility`、`delta_c`、价值覆盖、风险、路径代价、覆盖面积、每段路径代价、累计风险和不可达原因。
+
+默认 9 场景矩阵重新运行后仍保持上一轮结论：`consistency_recency_focused.json` 在 `9/9` 个场景中取得最低或并列最低路径总代价，`confidence_delta_c_mean = 2.4969659078022812`，无失败场景；`default.json` 的 `confidence_delta_c_mean = 1.1804746191998106`，`observation_focused.json` 的 `confidence_delta_c_mean = 0.4200272742285056`。
+
+额外使用一个临时 `npz_grid` 外部地图场景对比 `default.json` 与 `consistency_recency_focused.json`，结果如下：
+
+| 配置 | 地图来源 | 路径可达 | 路径总代价 | `ΔC` | 类别后验 `model` 可信度均值 | Top 序列数 |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `default.json` | `npz_grid` | `true` | `17.86029704719798` | `1.5965623630228316` | `0.37667757942364055` | `2` |
+| `consistency_recency_focused.json` | `npz_grid` | `true` | `17.728274604176686` | `2.6826057450069047` | `0.37667757942364055` | `2` |
+
+外部地图单场景中，`consistency_recency_focused.json` 仍取得较低路径总代价和更高 `ΔC`，推荐结论没有被打破。但该验证仍只是首版 `.npz` 接入烟测，不足以把 `consistency_recency_focused.json` 自动切换为默认配置。
+
+`model-explorer` 对接契约已固定 `schema_version = model-explorer-contract/v1`，稳定字段见 `docs/model-explorer-interface.md`，示例见 `docs/model-explorer-contract-example.json`。该接口只输出地图摘要、约束摘要、Top-K 目标、Top 序列和观测更新报告，不引入在线重规划或任务状态机。
+
 ## 下一步
 
-- 为离散地形类别后验增加更细的观测似然标定，例如按坡度、阴影、障碍和崎岖度分别配置似然。
-- 将固定种子半合成地图扩展为外部 DEM/遥感数据输入，继续检验推荐结论是否稳定。
-- 扩展多步目标序列报告，记录序列级覆盖面积和路径段间代价，但仍暂不引入在线重规划。
+- 扩展 `.npz` 外部地图验证集，覆盖多尺寸、多光照带、多障碍分布和不同观测位姿。
+- 用真实/半真实 DEM 或遥感派生栅格继续校验 `consistency_recency_focused.json` 的稳定性。
+- 在不改变项目边界的前提下，为 `model-explorer` 增加更多报告消费侧样例和字段兼容性检查。

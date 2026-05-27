@@ -158,6 +158,15 @@ HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、配�
 `scripts/generate_example_data.py` 会写入 `data/sample_grid.npz`，其中包含开发用示例图层。
 该文件由脚本生成，不作为核心运行依赖或版本库输入。
 
+## 本轮新增能力
+
+- 外部地图输入：消融场景支持 `map_source.kind = "npz_grid"`，从 `.npz` 地图包读取 `elevation`、`obstacle`、`obstacle_height`、`illumination`、`confidence`、`value` 和 `valid_mask`，并要求外部地图尺寸与分辨率匹配场景配置。
+- P1 类别后验：新增 `TerrainLikelihoodRules` 和 `compute_terrain_category_likelihood(...)`，从坡度、崎岖度、障碍概率和光照层生成 `safe_regolith`、`rough`、`obstacle`、`shadow_risk` 四类观测似然，再由类别后验熵派生 `model` 可信度分量。
+- P2 序列解释：`evaluate_goal_sequences(...)` 输出序列覆盖面积、每段路径代价、累计风险和不可达原因；消融 JSON/CSV/HTML 同步保留 Top 序列解释字段。
+- `model-explorer` 对接：稳定 JSON 契约由 `build_model_explorer_contract(...)` 生成，字段说明见 `docs/model-explorer-interface.md`，示例见 `docs/model-explorer-contract-example.json`。
+
+外部 `.npz` 输入首版只依赖 `numpy`，不引入 GIS 重型依赖；默认可信度配置仍不自动切换。
+
 ## 假设
 
 - 单位遵循设计文档：长度使用米，角度使用度。

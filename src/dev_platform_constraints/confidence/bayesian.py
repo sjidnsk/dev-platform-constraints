@@ -25,6 +25,18 @@ class CategoricalBayesianStateLayer:
 TERRAIN_CATEGORIES = ("safe_regolith", "rough", "obstacle", "shadow_risk")
 
 
+@dataclass(frozen=True)
+class TerrainLikelihoodRules:
+    """离散地形类别观测似然的轻量标定规则。"""
+
+    slope_rough_deg: float = 20.0
+    roughness_threshold: float = 0.6
+    obstacle_threshold: float = 0.5
+    shadow_threshold: float = 0.35
+    base_likelihood: float = 0.02
+    risk_likelihood: float = 0.98
+
+
 def _clip_probability(values: np.ndarray) -> np.ndarray:
     return np.clip(np.asarray(values, dtype=float), 1e-9, 1.0 - 1e-9)
 
@@ -33,6 +45,64 @@ def _normalize_categories(values: np.ndarray) -> np.ndarray:
     clipped = np.clip(np.asarray(values, dtype=float), 1e-9, None)
     totals = np.sum(clipped, axis=-1, keepdims=True)
     return clipped / totals
+
+
+def compute_terrain_category_likelihood(
+    *,
+    slope: np.ndarray,
+    roughness: np.ndarray,
+    obstacle: np.ndarray,
+    illumination: np.ndarray,
+    rules: TerrainLikelihoodRules | None = None,
+    valid_mask: np.ndarray | None = None,
+    categories: tuple[str, ...] = TERRAIN_CATEGORIES,
+) -> CategoricalBayesianStateLayer:
+    """从坡度、崎岖度、障碍和光照层生成离散地形类别观测似然。"""
+
+    if tuple(categories) != TERRAIN_CATEGORIES:
+        raise ValueError("terrain categories must use the fixed public category order")
+    rules = rules or TerrainLikelihoodRules()
+    if rules.slope_rough_deg <= 0.0:
+        raise ValueError("slope_rough_deg must be positive")
+    if rules.roughness_threshold <= 0.0:
+        raise ValueError("roughness_threshold must be positive")
+    if rules.obstacle_threshold <= 0.0:
+        raise ValueError("obstacle_threshold must be positive")
+    if rules.shadow_threshold <= 0.0:
+        raise ValueError("shadow_threshold must be positive")
+
+    slope_array = np.asarray(slope, dtype=float)
+    roughness_array = np.asarray(roughness, dtype=float)
+    obstacle_array = np.asarray(obstacle, dtype=float)
+    illumination_array = np.asarray(illumination, dtype=float)
+    if not (
+        slope_array.shape == roughness_array.shape == obstacle_array.shape == illumination_array.shape
+    ):
+        raise ValueError("slope, roughness, obstacle and illumination must share the same shape")
+
+    if valid_mask is None:
+        valid = np.ones(slope_array.shape, dtype=bool)
+    else:
+        valid = np.asarray(valid_mask, dtype=bool)
+        if valid.shape != slope_array.shape:
+            raise ValueError("valid_mask shape must match terrain layer shape")
+
+    slope_risk = np.clip(slope_array / rules.slope_rough_deg, 0.0, 1.0)
+    roughness_risk = np.clip(roughness_array / rules.roughness_threshold, 0.0, 1.0)
+    rough_risk = np.maximum(slope_risk, roughness_risk)
+    obstacle_risk = np.clip(obstacle_array / rules.obstacle_threshold, 0.0, 1.0)
+    shadow_risk = np.clip((rules.shadow_threshold - illumination_array) / rules.shadow_threshold, 0.0, 1.0)
+    safe_risk = np.clip(1.0 - (rough_risk + obstacle_risk + shadow_risk), 0.0, 1.0)
+
+    evidence = np.stack((safe_risk, rough_risk, obstacle_risk, shadow_risk), axis=-1)
+    likelihood = rules.base_likelihood + rules.risk_likelihood * evidence
+    probabilities = _normalize_categories(likelihood)
+    return CategoricalBayesianStateLayer(
+        name="terrain_likelihood",
+        categories=tuple(categories),
+        probabilities=np.where(valid[..., None], probabilities, 0.0),
+        valid_mask=valid,
+    )
 
 
 def update_obstacle_posterior(

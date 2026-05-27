@@ -16,6 +16,7 @@ class ObservationPose:
 class MapSource:
     kind: str = "sample"
     seed: int | None = None
+    path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,7 @@ def _parse_observations(raw: dict[str, Any], width: int, height: int) -> tuple[O
     return tuple(observations)
 
 
-def _parse_map_source(raw: dict[str, Any]) -> MapSource:
+def _parse_map_source(raw: dict[str, Any], base_dir: Path | None = None) -> MapSource:
     map_source_raw = raw.get("map_source", {"kind": "sample"})
     if not isinstance(map_source_raw, dict):
         raise ValueError("map_source must be an object")
@@ -110,10 +111,17 @@ def _parse_map_source(raw: dict[str, Any]) -> MapSource:
         if "seed" not in map_source_raw:
             raise ValueError("map_source.seed is required for seeded_synthetic")
         return MapSource(kind="seeded_synthetic", seed=int(map_source_raw["seed"]))
-    raise ValueError("map_source.kind must be sample or seeded_synthetic")
+    if kind == "npz_grid":
+        if "path" not in map_source_raw:
+            raise ValueError("map_source.path is required for npz_grid")
+        npz_path = Path(str(map_source_raw["path"]))
+        if not npz_path.is_absolute() and base_dir is not None:
+            npz_path = base_dir / npz_path
+        return MapSource(kind="npz_grid", path=str(npz_path))
+    raise ValueError("map_source.kind must be sample, seeded_synthetic or npz_grid")
 
 
-def _parse_scenario(raw: dict[str, Any]) -> AblationScenario:
+def _parse_scenario(raw: dict[str, Any], base_dir: Path | None = None) -> AblationScenario:
     width = int(raw.get("width", 0))
     height = int(raw.get("height", 0))
     if width <= 0 or height <= 0:
@@ -137,19 +145,20 @@ def _parse_scenario(raw: dict[str, Any]) -> AblationScenario:
         occlusion_obstacles=tuple(_cell(cell, "occlusion_obstacles", width, height) for cell in raw.get("occlusion_obstacles", ())),
         use_simple_occlusion=bool(raw.get("use_simple_occlusion", False)),
         lookahead_steps=max(1, int(raw.get("lookahead_steps", 1))),
-        map_source=_parse_map_source(raw),
+        map_source=_parse_map_source(raw, base_dir),
     )
 
 
 def load_ablation_scenarios(path: str | Path) -> tuple[AblationScenario, ...]:
     """读取确定性消融场景配置，并完成尺寸、位姿和区域边界检查。"""
 
-    with Path(path).open("r", encoding="utf-8") as handle:
+    config_path = Path(path)
+    with config_path.open("r", encoding="utf-8") as handle:
         raw = json.load(handle)
     scenarios_raw = raw.get("scenarios")
     if not isinstance(scenarios_raw, list) or not scenarios_raw:
         raise ValueError("scenarios must be a non-empty list")
-    scenarios = tuple(_parse_scenario(item) for item in scenarios_raw)
+    scenarios = tuple(_parse_scenario(item, config_path.parent) for item in scenarios_raw)
     ids = [scenario.scenario_id for scenario in scenarios]
     if len(set(ids)) != len(ids):
         raise ValueError("scenario_id values must be unique")

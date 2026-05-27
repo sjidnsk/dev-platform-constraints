@@ -9,7 +9,7 @@ from dev_platform_constraints.experiments import (
     default_ablation_scenario_config_path,
     load_ablation_scenarios,
 )
-from dev_platform_constraints.sample_data import generate_seeded_synthetic_grid
+from dev_platform_constraints.sample_data import generate_seeded_synthetic_grid, load_npz_grid
 
 
 class AblationScenarioConfigTests(unittest.TestCase):
@@ -36,6 +36,66 @@ class AblationScenarioConfigTests(unittest.TestCase):
         self.assertTrue((grid_a.layers["elevation"] == grid_b.layers["elevation"]).all())
         self.assertTrue((grid_a.layers["illumination"] == grid_b.layers["illumination"]).all())
         self.assertFalse((grid_a.layers["elevation"] == grid_c.layers["elevation"]).all())
+
+    def test_npz_grid_loader_reads_required_layers_and_metadata(self) -> None:
+        path = Path(tempfile.mkdtemp(prefix="npz-grid-")) / "grid.npz"
+        shape = (4, 5)
+        np_layers = {
+            "elevation": [[float(x + y) for x in range(shape[1])] for y in range(shape[0])],
+            "obstacle": [[0.0 for _ in range(shape[1])] for _ in range(shape[0])],
+            "obstacle_height": [[0.0 for _ in range(shape[1])] for _ in range(shape[0])],
+            "illumination": [[0.8 for _ in range(shape[1])] for _ in range(shape[0])],
+            "confidence": [[0.7 for _ in range(shape[1])] for _ in range(shape[0])],
+            "value": [[0.0 for _ in range(shape[1])] for _ in range(shape[0])],
+            "valid_mask": [[True for _ in range(shape[1])] for _ in range(shape[0])],
+        }
+        import numpy as np
+
+        np.savez(path, resolution=0.25, origin=np.array([1.0, 2.0]), **{name: np.asarray(data) for name, data in np_layers.items()})
+
+        grid = load_npz_grid(path)
+
+        self.assertEqual(grid.width, 5)
+        self.assertEqual(grid.height, 4)
+        self.assertEqual(grid.resolution, 0.25)
+        self.assertEqual(grid.origin, (1.0, 2.0))
+        self.assertEqual(grid.layer_metadata("elevation").source_kind, "npz_grid")
+        self.assertTrue(grid.layers["valid_mask"].dtype == bool)
+
+    def test_npz_grid_loader_rejects_missing_layer_and_shape_mismatch(self) -> None:
+        import numpy as np
+
+        path = Path(tempfile.mkdtemp(prefix="npz-grid-invalid-")) / "missing.npz"
+        base = np.zeros((3, 4), dtype=float)
+        np.savez(
+            path,
+            resolution=0.5,
+            elevation=base,
+            obstacle=base,
+            obstacle_height=base,
+            illumination=base,
+            confidence=base,
+            valid_mask=np.ones((3, 4), dtype=bool),
+        )
+
+        with self.assertRaisesRegex(ValueError, "value"):
+            load_npz_grid(path)
+
+        path = path.with_name("bad_shape.npz")
+        np.savez(
+            path,
+            resolution=0.5,
+            elevation=base,
+            obstacle=np.zeros((2, 4), dtype=float),
+            obstacle_height=base,
+            illumination=base,
+            confidence=base,
+            value=base,
+            valid_mask=np.ones((3, 4), dtype=bool),
+        )
+
+        with self.assertRaisesRegex(ValueError, "shape"):
+            load_npz_grid(path)
 
     def test_invalid_scenario_config_rejects_bad_dimensions_and_out_of_bounds_cells(self) -> None:
         invalid = {
@@ -85,6 +145,35 @@ class AblationScenarioConfigTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "map_source.seed"):
             load_ablation_scenarios(path)
+
+        path.write_text(json.dumps({"scenarios": [dict(base, map_source={"kind": "npz_grid"})]}), encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "map_source.path"):
+            load_ablation_scenarios(path)
+
+    def test_npz_grid_map_source_preserves_path_in_scenario_config(self) -> None:
+        path = Path(tempfile.mkdtemp(prefix="ablation-npz-map-source-")) / "scenario.json"
+        map_path = path.with_name("grid.npz")
+        scenario = {
+            "scenario_id": "external_grid",
+            "width": 8,
+            "height": 6,
+            "resolution": 0.5,
+            "observations": [{"observer_cell": [0, 3], "heading_deg": 0.0}],
+            "start_cell": [0, 0],
+            "goal_cell": [7, 5],
+            "elapsed_time": 1.0,
+            "recency_time_constant": 10.0,
+            "low_confidence_band": [2, 3],
+            "value_region": [5, 8, 3, 6],
+            "map_source": {"kind": "npz_grid", "path": str(map_path)},
+        }
+        path.write_text(json.dumps({"scenarios": [scenario]}), encoding="utf-8")
+
+        loaded = load_ablation_scenarios(path)[0]
+
+        self.assertEqual(loaded.map_source.kind, "npz_grid")
+        self.assertEqual(loaded.map_source.path, str(map_path))
 
 
 if __name__ == "__main__":

@@ -21,7 +21,14 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from dev_platform_constraints.confidence import default_confidence_config_path, load_confidence_weights, update_confidence_from_observation
+from dev_platform_constraints.confidence import (
+    compute_terrain_category_likelihood,
+    default_confidence_config_path,
+    derive_confidence_from_categorical_posterior,
+    load_confidence_weights,
+    update_categorical_posterior,
+    update_confidence_from_observation,
+)
 from dev_platform_constraints.core import validate_grid_map
 from dev_platform_constraints.exploration import evaluate_goal_sequences, generate_exploration_candidates, rank_exploration_goals
 from dev_platform_constraints.experiments import AblationScenario, default_ablation_scenario_config_path, load_ablation_scenarios
@@ -29,7 +36,7 @@ from dev_platform_constraints.mapping import generate_costmap, generate_hard_con
 from dev_platform_constraints.path_planning import astar_path
 from dev_platform_constraints.platforms import default_platform_config_path, load_platform_parameters
 from dev_platform_constraints.reporting.visualization import _low_confidence_high_risk_path_ratio
-from dev_platform_constraints.sample_data import generate_sample_grid, generate_seeded_synthetic_grid
+from dev_platform_constraints.sample_data import generate_sample_grid, generate_seeded_synthetic_grid, load_npz_grid
 from dev_platform_constraints.terrain import derive_terrain_features
 
 
@@ -87,6 +94,15 @@ def _build_scenario_grid(scenario: AblationScenario):
             resolution=scenario.resolution,
             seed=int(scenario.map_source.seed or 0),
         )
+    if scenario.map_source.kind == "npz_grid":
+        if scenario.map_source.path is None:
+            raise ValueError("map_source.path is required for npz_grid")
+        grid = load_npz_grid(scenario.map_source.path)
+        if grid.width != scenario.width or grid.height != scenario.height:
+            raise ValueError("npz_grid dimensions must match scenario width and height")
+        if abs(grid.resolution - scenario.resolution) > 1e-9:
+            raise ValueError("npz_grid resolution must match scenario resolution")
+        return grid
     return generate_sample_grid(width=scenario.width, height=scenario.height, resolution=scenario.resolution)
 
 
@@ -134,11 +150,54 @@ def _apply_observation_updates(grid, platform, scenario: AblationScenario, weigh
     }
 
 
+def _terrain_model_confidence_mean(grid) -> float:
+    valid_mask = grid.layers.get("valid_mask", np.ones(grid.shape, dtype=bool)).astype(bool, copy=False)
+    likelihood = compute_terrain_category_likelihood(
+        slope=grid.require_layer("slope"),
+        roughness=grid.require_layer("roughness"),
+        obstacle=grid.require_layer("obstacle"),
+        illumination=grid.require_layer("illumination"),
+        valid_mask=valid_mask,
+    )
+    prior = np.full(likelihood.probabilities.shape, 1.0 / len(likelihood.categories), dtype=float)
+    quality = np.clip(np.asarray(grid.require_layer("confidence"), dtype=float), 0.0, 1.0)
+    posterior = update_categorical_posterior(
+        prior,
+        likelihood.probabilities,
+        quality,
+        categories=likelihood.categories,
+        valid_mask=valid_mask,
+    )
+    confidence = derive_confidence_from_categorical_posterior(posterior)
+    valid_values = confidence.values[confidence.valid_mask]
+    return float(np.mean(valid_values)) if valid_values.size else 0.0
+
+
+def _sequence_details(goal_sequences) -> list[dict[str, object]]:
+    return [
+        {
+            "cells": [goal.cell for goal in sequence.goals],
+            "utility": sequence.utility,
+            "delta_c": sequence.delta_c,
+            "value_coverage": sequence.value_coverage,
+            "risk": sequence.risk,
+            "path_cost": sequence.path_cost,
+            "coverage_area": sequence.coverage_area,
+            "segment_path_costs": list(sequence.segment_path_costs),
+            "cumulative_risk": sequence.cumulative_risk,
+            "reachable": sequence.reachable,
+            "unreachable_reasons": list(sequence.unreachable_reasons),
+        }
+        for sequence in goal_sequences
+    ]
+
+
 def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int) -> dict[str, object]:
     grid = _build_scenario_grid(scenario)
     _apply_scenario_layers(grid, scenario)
     derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
     _apply_scenario_risk_layers(grid, scenario)
+    terrain_model_confidence_mean = _terrain_model_confidence_mean(grid)
     platform = load_platform_parameters(default_platform_config_path("yutu2"))
     weights = load_confidence_weights(config_path)
     confidence_report = _apply_observation_updates(grid, platform, scenario, weights)
@@ -182,11 +241,13 @@ def _run_single_config(config_path: Path, scenario: AblationScenario, top_k: int
         "confidence_low_area_before": confidence_report["low_confidence_area_before"],
         "confidence_low_area_after": confidence_report["low_confidence_area_after"],
         "confidence_delta_c": confidence_report["delta_c"],
+        "terrain_model_confidence_mean": terrain_model_confidence_mean,
         "low_confidence_high_risk_path_ratio": _low_confidence_high_risk_path_ratio(grid, plan),
         "top_goal_cells": [goal.candidate.cell for goal in scored_goals],
         "top_goal_utilities": [goal.utility for goal in scored_goals],
         "top_goal_sequence_cells": [[goal.cell for goal in sequence.goals] for sequence in goal_sequences],
         "top_goal_sequence_utilities": [sequence.utility for sequence in goal_sequences],
+        "top_goal_sequence_details": _sequence_details(goal_sequences),
     }
 
 
@@ -209,11 +270,13 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
         "confidence_low_area_before",
         "confidence_low_area_after",
         "confidence_delta_c",
+        "terrain_model_confidence_mean",
         "low_confidence_high_risk_path_ratio",
         "top_goal_cells",
         "top_goal_utilities",
         "top_goal_sequence_cells",
         "top_goal_sequence_utilities",
+        "top_goal_sequence_details",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -224,6 +287,7 @@ def _write_csv(path: Path, runs: list[dict[str, object]]) -> None:
             row["top_goal_utilities"] = json.dumps(row["top_goal_utilities"], ensure_ascii=False)
             row["top_goal_sequence_cells"] = json.dumps(row["top_goal_sequence_cells"], ensure_ascii=False)
             row["top_goal_sequence_utilities"] = json.dumps(row["top_goal_sequence_utilities"], ensure_ascii=False)
+            row["top_goal_sequence_details"] = json.dumps(row["top_goal_sequence_details"], ensure_ascii=False)
             writer.writerow(row)
 
 
@@ -422,6 +486,27 @@ def _format_goal_cells(cells: object) -> str:
     return ", ".join(f"({cell[0]}, {cell[1]})" for cell in cells if isinstance(cell, (list, tuple)) and len(cell) == 2)
 
 
+def _format_sequence_details(details: object) -> str:
+    if not isinstance(details, list):
+        return str(details)
+    formatted: list[str] = []
+    for index, sequence in enumerate(details[:2], start=1):
+        if not isinstance(sequence, dict):
+            continue
+        cells = _format_goal_cells(sequence.get("cells"))
+        formatted.append(
+            "S{index}: cells={cells}; utility={utility:.3g}; coverage={coverage:.3g}; risk={risk:.3g}; reachable={reachable}".format(
+                index=index,
+                cells=cells,
+                utility=float(sequence.get("utility") or 0.0),
+                coverage=float(sequence.get("coverage_area") or 0.0),
+                risk=float(sequence.get("cumulative_risk") or 0.0),
+                reachable=sequence.get("reachable"),
+            )
+        )
+    return " | ".join(formatted)
+
+
 def _write_ablation_html(
     path: Path,
     image_path: Path,
@@ -440,6 +525,7 @@ def _write_ablation_html(
         f"<td>{escape(str(run['confidence_low_area_after']))}</td>"
         f"<td>{escape(str(run['low_confidence_high_risk_path_ratio']))}</td>"
         f"<td>{escape(_format_goal_cells(run['top_goal_cells']))}</td>"
+        f"<td>{escape(_format_sequence_details(run['top_goal_sequence_details']))}</td>"
         "</tr>"
         for run in runs
     )
@@ -509,7 +595,7 @@ def _write_ablation_html(
   <h2>实验摘要</h2>
   <table>
     <thead>
-      <tr><th>场景</th><th>配置</th><th>路径总代价</th><th>可信度正向提升总量</th><th>更新后低可信区域面积</th><th>低可信高风险路径比例</th><th>Top-K 探索目标</th></tr>
+      <tr><th>场景</th><th>配置</th><th>路径总代价</th><th>可信度正向提升总量</th><th>更新后低可信区域面积</th><th>低可信高风险路径比例</th><th>Top-K 探索目标</th><th>Top 序列解释</th></tr>
     </thead>
     <tbody>
       {rows}

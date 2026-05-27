@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 
 class ConfidenceAblationScriptTests(unittest.TestCase):
     def test_ablation_script_outputs_json_csv_and_goal_ranking_metrics(self) -> None:
@@ -66,7 +68,12 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertIn("top_goal_cells", first_run)
         self.assertIn("top_goal_sequence_cells", first_run)
         self.assertIn("top_goal_sequence_utilities", first_run)
+        self.assertIn("top_goal_sequence_details", first_run)
+        self.assertIn("terrain_model_confidence_mean", first_run)
         self.assertIn("map_source_kind", first_run)
+        self.assertIn("coverage_area", first_run["top_goal_sequence_details"][0])
+        self.assertIn("segment_path_costs", first_run["top_goal_sequence_details"][0])
+        self.assertIn("unreachable_reasons", first_run["top_goal_sequence_details"][0])
         self.assertLessEqual(len(first_run["top_goal_cells"]), 2)
         self.assertGreater(len(summary["runs"]), len(summary["aggregate"]))
 
@@ -153,6 +160,75 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertEqual(len(summary["runs"]), 1)
         self.assertEqual(summary["runs"][0]["scenario_id"], "custom_small")
         self.assertEqual(summary["runs"][0]["map_source_kind"], "sample")
+
+    def test_ablation_script_accepts_npz_grid_scenario(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        output_dir = Path(tempfile.mkdtemp(prefix="confidence-ablation-npz-"))
+        grid_path = output_dir / "external_grid.npz"
+        shape = (10, 16)
+        zeros = np.zeros(shape, dtype=float)
+        np.savez(
+            grid_path,
+            resolution=0.5,
+            elevation=np.tile(np.linspace(0.0, 0.2, shape[1]), (shape[0], 1)),
+            obstacle=zeros,
+            obstacle_height=zeros,
+            illumination=np.full(shape, 0.8, dtype=float),
+            confidence=np.full(shape, 0.7, dtype=float),
+            value=zeros,
+            valid_mask=np.ones(shape, dtype=bool),
+        )
+        scenario_path = output_dir / "scenario.json"
+        scenario_path.write_text(
+            json.dumps(
+                {
+                    "scenarios": [
+                        {
+                            "scenario_id": "npz_external",
+                            "width": 16,
+                            "height": 10,
+                            "resolution": 0.5,
+                            "observations": [{"observer_cell": [0, 5], "heading_deg": 0.0}],
+                            "start_cell": [0, 0],
+                            "goal_cell": [15, 9],
+                            "elapsed_time": 1.0,
+                            "recency_time_constant": 10.0,
+                            "low_confidence_band": [4, 6],
+                            "value_region": [12, 16, 7, 10],
+                            "map_source": {"kind": "npz_grid", "path": str(grid_path)},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        script = repo_root / "scripts" / "run_confidence_ablation.py"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--output-dir",
+                str(output_dir),
+                "--configs",
+                str(repo_root / "configs" / "confidence" / "default.json"),
+                "--scenario-config",
+                str(scenario_path),
+                "--top-k",
+                "2",
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["runs"][0]["map_source_kind"], "npz_grid")
+        self.assertTrue(summary["runs"][0]["validation_valid"])
+        self.assertTrue(summary["runs"][0]["path_reachable"])
+        self.assertGreater(summary["runs"][0]["terrain_model_confidence_mean"], 0.0)
 
 
 if __name__ == "__main__":

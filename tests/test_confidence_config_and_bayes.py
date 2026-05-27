@@ -9,6 +9,8 @@ from dev_platform_constraints.confidence import (
     BayesianStateLayer,
     CategoricalBayesianStateLayer,
     ConfidenceWeights,
+    TerrainLikelihoodRules,
+    compute_terrain_category_likelihood,
     derive_confidence_from_categorical_posterior,
     derive_confidence_from_posterior,
     load_confidence_weights,
@@ -172,6 +174,38 @@ class ConfidenceConfigAndBayesTests(unittest.TestCase):
 
         self.assertEqual(agreeing_confidence.name, "model")
         self.assertLess(float(conflicting_confidence.values[0, 0]), float(agreeing_confidence.values[0, 0]))
+
+    def test_terrain_category_likelihood_uses_risk_layers_and_configurable_rules(self) -> None:
+        slope = np.array([[2.0, 18.0], [5.0, 3.0]])
+        roughness = np.array([[0.1, 0.9], [0.2, 0.1]])
+        obstacle = np.array([[0.0, 0.1], [0.9, 0.1]])
+        illumination = np.array([[0.8, 0.8], [0.7, 0.1]])
+
+        likelihood = compute_terrain_category_likelihood(
+            slope=slope,
+            roughness=roughness,
+            obstacle=obstacle,
+            illumination=illumination,
+        )
+
+        category_index = {name: index for index, name in enumerate(likelihood.categories)}
+        self.assertGreater(likelihood.probabilities[0, 0, category_index["safe_regolith"]], 0.6)
+        self.assertGreater(likelihood.probabilities[0, 1, category_index["rough"]], 0.6)
+        self.assertGreater(likelihood.probabilities[1, 0, category_index["obstacle"]], 0.6)
+        self.assertGreater(likelihood.probabilities[1, 1, category_index["shadow_risk"]], 0.6)
+
+        stricter_rules = TerrainLikelihoodRules(roughness_threshold=0.95)
+        stricter = compute_terrain_category_likelihood(
+            slope=slope,
+            roughness=roughness,
+            obstacle=obstacle,
+            illumination=illumination,
+            rules=stricter_rules,
+        )
+        self.assertLess(
+            stricter.probabilities[0, 1, category_index["rough"]],
+            likelihood.probabilities[0, 1, category_index["rough"]],
+        )
 
 
 if __name__ == "__main__":
