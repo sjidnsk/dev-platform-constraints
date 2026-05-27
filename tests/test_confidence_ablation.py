@@ -34,7 +34,9 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = json.loads(result.stdout)
-        self.assertEqual(len(summary["runs"]), 3)
+        self.assertGreater(len(summary["scenarios"]), 1)
+        self.assertEqual(len(summary["runs"]), len(summary["scenarios"]) * 3)
+        self.assertIn("aggregate", summary)
         self.assertTrue(Path(summary["json_path"]).exists())
         self.assertTrue(Path(summary["csv_path"]).exists())
         self.assertTrue(Path(summary["html_path"]).exists())
@@ -42,16 +44,26 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertEqual(Path(summary["image_path"]).read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
 
         first_run = summary["runs"][0]
+        self.assertIn("scenario_id", first_run)
         self.assertIn("confidence_config", first_run)
         self.assertIn("path_total_cost", first_run)
         self.assertIn("confidence_delta_c", first_run)
         self.assertIn("low_confidence_high_risk_path_ratio", first_run)
         self.assertIn("top_goal_cells", first_run)
         self.assertLessEqual(len(first_run["top_goal_cells"]), 2)
+        self.assertGreater(len(summary["runs"]), len(summary["aggregate"]))
+
+        first_aggregate = summary["aggregate"][0]
+        self.assertIn("path_total_cost_mean", first_aggregate)
+        self.assertIn("path_total_cost_std", first_aggregate)
+        self.assertIn("confidence_delta_c_mean", first_aggregate)
+        self.assertIn("best_path_cost_count", first_aggregate)
+        self.assertIn("top_goal_stability", first_aggregate)
+        self.assertIn("failure_scenarios", first_aggregate)
 
         with Path(summary["csv_path"]).open("r", encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
-        self.assertEqual(len(rows), 3)
+        self.assertEqual(len(rows), len(summary["runs"]))
         self.assertIn("top_goal_cells", rows[0])
 
         html = Path(summary["html_path"]).read_text(encoding="utf-8")
@@ -59,6 +71,8 @@ class ConfidenceAblationScriptTests(unittest.TestCase):
         self.assertIn("路径总代价", html)
         self.assertIn("可信度正向提升总量", html)
         self.assertIn("Top-K 探索目标", html)
+        self.assertIn("配置胜率", html)
+        self.assertIn("Top-K 稳定性", html)
         self.assertIn("confidence_ablation.png", html)
 
 

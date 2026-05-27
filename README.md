@@ -17,15 +17,15 @@
 - 基础非负 `cost` 输出，以及与 `confidence` 分离的 `traversability` 输出。
 - 用 A* 验证最小闭环路径是否可达。
 
-当前 P1 实现可解释的可信度分量、配置化融合、一次局部观测更新、数据契约报告、障碍概率与通行概率贝叶斯后验边界；
-暂不实现复杂遮挡、高级观测调度或风险传播。`confidence` 表示信息可靠程度，不等同于
+当前 P1 实现可解释的可信度分量、配置化融合、一次局部观测更新、显式观测模型、数据契约报告、障碍概率与通行概率贝叶斯后验边界；
+暂不实现复杂三维遮挡、高级观测调度或风险传播。`confidence` 表示信息可靠程度，不等同于
 `traversability`。`value` 默认视为科学或任务效用，不进入通行代价，除非后续实验显式启用价值奖励权重。
 
 ## 开发状态
 
 - P0：已完成，包含栅格数据契约、地形特征、平台配置、硬约束、非负代价图和 A* 最小闭环。
-- P1：部分完成，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、可信度权重消融脚本和最小贝叶斯状态后验。
-- P2：已提供离散候选观测目标生成与排序起点；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
+- P1：部分完成，包含 `c_resolution`、`c_observation`、`c_recency`、`c_consistency`、缺失分量重归一化、配置化权重、局部观测更新、数据契约报告、多场景可信度权重消融脚本和最小贝叶斯状态后验。
+- P2：已提供离散候选观测目标生成与排序起点，候选收益按传感器 footprint 估计；暂不实现 Hybrid A*、动力学约束、在线重规划和完整工程部署能力。
 - 生成数据：scripts/generate_example_data.py 是生成型脚本，用于刷新开发示例数据，不是核心运行依赖；生成的 `data/sample_grid.npz` 不提交版本库。
 
 `src/dev_platform_constraints/` 按职责分为：
@@ -56,7 +56,7 @@ python scripts\generate_example_data.py
 
 - 单元测试输出 `OK`。
 - `scripts\run_minimal_closure.py` 输出 JSON 摘要，其中 `validation_valid` 和 `path_reachable` 均为 `true`，并包含 `data_contract`、`confidence_delta_c`、低可信区域面积和局部观测更新指标。
-- `scripts\run_confidence_ablation.py` 输出 JSON/CSV 数据报告和 HTML/PNG 可视化报告，比较不同可信度权重对路径代价、`ΔC`、低可信高风险路径比例和 Top-K 探索目标排序的影响。
+- `scripts\run_confidence_ablation.py` 输出 JSON/CSV 数据报告和 HTML/PNG 可视化报告，比较不同可信度权重在多场景下对路径代价、`ΔC`、低可信高风险路径比例、配置胜率和 Top-K 探索目标稳定性的影响。
 - `scripts\generate_example_data.py` 写入 `data/sample_grid.npz`，输出写入路径和图层列表。
 
 ## 运行
@@ -137,11 +137,19 @@ $env:PYTHONPATH='src'
 python scripts\run_confidence_ablation.py --output-dir outputs\ablation
 ```
 
-默认会比较 `configs\confidence\default.json`、`configs\confidence\observation_focused.json`
+默认会在 `baseline_gap`、`upper_observation`、`compact_value` 三个确定性场景中比较
+`configs\confidence\default.json`、`configs\confidence\observation_focused.json`
 和 `configs\confidence\consistency_recency_focused.json`，并写入
 `outputs\ablation\confidence_ablation.json`、`outputs\ablation\confidence_ablation.csv`、
 `outputs\ablation\confidence_ablation.png` 和 `outputs\ablation\confidence_ablation.html`。
-HTML 报告展示路径总代价、可信度正向提升总量、更新后低可信区域面积、低可信高风险路径比例和 Top-K 探索目标。
+JSON 报告包含 `scenarios`、逐次 `runs` 和配置级 `aggregate` 三层结果；CSV 保留逐次实验记录。
+HTML/PNG 报告展示路径总代价分布、可信度正向提升总量、配置胜率、Top-K 稳定性和逐场景 Top-K 探索目标。
+
+当前多场景结果中，`consistency_recency_focused.json` 在 `3/3` 个场景取得最低路径总代价，
+且 `confidence_delta_c_mean = 2.3326057450069047`，高于 `default.json` 的
+`1.1238125091235596` 和 `observation_focused.json` 的 `0.3578170008515782`。
+因此下一轮 P1/P2 实验继续推荐以 `consistency_recency_focused.json` 作为基线，
+但默认配置暂不自动切换，直到更多地图和观测位姿验证完成。
 
 `scripts/generate_example_data.py` 会写入 `data/sample_grid.npz`，其中包含开发用示例图层。
 该文件由脚本生成，不作为核心运行依赖或版本库输入。

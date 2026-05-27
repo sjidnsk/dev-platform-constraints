@@ -41,6 +41,13 @@ class ConfidenceUpdateReport:
     updated_cell_count: int
 
 
+@dataclass(frozen=True)
+class ObservationModelResult:
+    visible_mask: np.ndarray
+    quality_layer: np.ndarray
+    confidence_component: ConfidenceComponent
+
+
 def _as_bool_mask(mask: np.ndarray | None, shape: tuple[int, int]) -> np.ndarray:
     if mask is None:
         return np.ones(shape, dtype=bool)
@@ -81,6 +88,64 @@ def compute_observation_confidence(
 ) -> ConfidenceComponent:
     """用简化距离和视场角模型计算传感器观测覆盖可信度。"""
 
+    return compute_observation_model(grid, platform, observer_cell, heading_deg).confidence_component
+
+
+def _grid_line_cells(start: tuple[int, int], end: tuple[int, int]) -> tuple[tuple[int, int], ...]:
+    """返回两格之间的 Bresenham 栅格线，用于一阶遮挡近似。"""
+
+    x0, y0 = start
+    x1, y1 = end
+    dx = abs(x1 - x0)
+    dy = -abs(y1 - y0)
+    step_x = 1 if x0 < x1 else -1
+    step_y = 1 if y0 < y1 else -1
+    error = dx + dy
+    cells: list[tuple[int, int]] = []
+    while True:
+        cells.append((x0, y0))
+        if x0 == x1 and y0 == y1:
+            break
+        doubled = 2 * error
+        if doubled >= dy:
+            error += dy
+            x0 += step_x
+        if doubled <= dx:
+            error += dx
+            y0 += step_y
+    return tuple(cells)
+
+
+def _apply_simple_occlusion(grid: GridMap, visible: np.ndarray, observer_cell: tuple[int, int]) -> np.ndarray:
+    obstacle = grid.layers.get("obstacle")
+    if obstacle is None:
+        return visible
+    obstacle_array = np.asarray(obstacle, dtype=float)
+    if obstacle_array.shape != grid.shape:
+        return visible
+
+    result = visible.copy()
+    for y, x in np.argwhere(visible):
+        cell = (int(x), int(y))
+        if cell == observer_cell:
+            continue
+        line = _grid_line_cells(observer_cell, cell)
+        blockers = line[1:-1]
+        if any(obstacle_array[blocker_y, blocker_x] >= 0.5 for blocker_x, blocker_y in blockers):
+            result[y, x] = False
+    return result
+
+
+def compute_observation_model(
+    grid: GridMap,
+    platform: PlatformParameters,
+    observer_cell: tuple[int, int],
+    heading_deg: float,
+    *,
+    use_simple_occlusion: bool = False,
+) -> ObservationModelResult:
+    """计算观测几何模型，输出可见区域、观测质量层和可信度分量。"""
+
     sensor_range = platform.float_value("sensor_range")
     sensor_fov = platform.float_value("sensor_fov")
     if sensor_range <= 0.0:
@@ -101,12 +166,20 @@ def compute_observation_confidence(
     angle_delta = np.arctan2(np.sin(angles - heading), np.cos(angles - heading))
     in_range = distance <= sensor_range
     in_fov = np.abs(np.degrees(angle_delta)) <= sensor_fov / 2.0
-    visible = in_range & in_fov
+    valid_mask = grid.layers.get("valid_mask", np.ones(grid.shape, dtype=bool)).astype(bool, copy=False)
+    visible = in_range & in_fov & valid_mask
+    if use_simple_occlusion:
+        visible = _apply_simple_occlusion(grid, visible, observer_cell)
 
     range_quality = np.clip(1.0 - distance / sensor_range, 0.0, 1.0)
     angular_quality = np.clip(np.cos(angle_delta), 0.0, 1.0)
     values = np.where(visible, range_quality * angular_quality, 0.0)
-    return _component("observation", values, visible)
+    component = _component("observation", values, visible)
+    return ObservationModelResult(
+        visible_mask=component.valid_mask,
+        quality_layer=component.values,
+        confidence_component=component,
+    )
 
 
 def compute_recency_confidence(

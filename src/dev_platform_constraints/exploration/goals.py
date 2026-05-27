@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import hypot
+from math import atan2, degrees, hypot
 from typing import Iterable
 
 import numpy as np
 
+from ..confidence import compute_observation_model
 from ..core.layers import GridMap
 from ..mapping.constraints import ConstraintResult
 from ..path_planning import astar_path
@@ -82,6 +83,49 @@ def _frontier_score(valid: np.ndarray, passable: np.ndarray) -> np.ndarray:
     return frontier
 
 
+def _heading_from_start(start: tuple[int, int], cell: tuple[int, int]) -> float:
+    dx = cell[0] - start[0]
+    dy = cell[1] - start[1]
+    if dx == 0 and dy == 0:
+        return 0.0
+    return degrees(atan2(dy, dx))
+
+
+def _footprint_gain_layers(
+    grid: GridMap,
+    start: tuple[int, int],
+    platform: PlatformParameters,
+    valid: np.ndarray,
+    confidence_gain: np.ndarray,
+    value: np.ndarray,
+    frontier: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    footprint_information = np.zeros(grid.shape, dtype=float)
+    footprint_value = np.zeros(grid.shape, dtype=float)
+    footprint_confidence_gain = np.zeros(grid.shape, dtype=float)
+
+    for y in range(grid.height):
+        for x in range(grid.width):
+            if not valid[y, x]:
+                continue
+            cell = (x, y)
+            model = compute_observation_model(grid, platform, cell, _heading_from_start(start, cell))
+            footprint_weight = np.asarray(model.quality_layer, dtype=float) * valid
+            if np.any(footprint_weight > 0.0):
+                footprint_confidence_gain[y, x] = max(
+                    float(confidence_gain[y, x]),
+                    float(np.max(confidence_gain * footprint_weight)),
+                )
+                footprint_value[y, x] = max(float(value[y, x]), float(np.max(value * footprint_weight)))
+            else:
+                footprint_confidence_gain[y, x] = float(confidence_gain[y, x])
+                footprint_value[y, x] = float(value[y, x])
+            footprint_information[y, x] = float(
+                np.clip(0.7 * footprint_confidence_gain[y, x] + 0.3 * frontier[y, x], 0.0, 1.0)
+            )
+    return footprint_information, footprint_value, footprint_confidence_gain
+
+
 def generate_exploration_candidates(
     grid: GridMap,
     constraints: ConstraintResult,
@@ -108,9 +152,18 @@ def generate_exploration_candidates(
     confidence_gain = np.clip(1.0 - confidence, 0.0, 1.0)
     risk = _candidate_risk(grid, platform)
     frontier = _frontier_score(valid, passable)
+    footprint_information, footprint_value, footprint_confidence_gain = _footprint_gain_layers(
+        grid,
+        start,
+        platform,
+        valid,
+        confidence_gain,
+        value,
+        frontier,
+    )
     seed_score = np.where(
         valid,
-        0.40 * confidence_gain + 0.35 * value + 0.15 * frontier + 0.10 * (1.0 - risk),
+        0.35 * footprint_confidence_gain + 0.30 * footprint_value + 0.15 * frontier + 0.10 * (1.0 - risk) + 0.10 * confidence_gain,
         -1.0,
     )
 
@@ -141,9 +194,9 @@ def generate_exploration_candidates(
         candidates.append(
             CandidateGoal(
                 cell=cell,
-                information_gain=float(np.clip(0.7 * confidence_gain[y, x] + 0.3 * frontier[y, x], 0.0, 1.0)),
-                value=float(value[y, x]),
-                confidence_gain=float(confidence_gain[y, x]),
+                information_gain=float(footprint_information[y, x]),
+                value=float(footprint_value[y, x]),
+                confidence_gain=float(footprint_confidence_gain[y, x]),
                 risk=float(risk[y, x]),
                 path_cost=float(path_cost),
                 energy_cost=float(path_cost * (1.0 + risk[y, x])),

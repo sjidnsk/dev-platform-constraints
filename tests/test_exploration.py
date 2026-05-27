@@ -3,12 +3,19 @@ import unittest
 from dev_platform_constraints.exploration import CandidateGoal, ExplorationWeights, generate_exploration_candidates, rank_exploration_goals
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.path_planning import astar_path
-from dev_platform_constraints.platforms import PlatformParameters
+from dev_platform_constraints.platforms import ParameterValue, PlatformParameters
 from dev_platform_constraints.sample_data import generate_sample_grid
 from dev_platform_constraints.terrain import derive_terrain_features
 
 
 class ExplorationGoalTests(unittest.TestCase):
+    def sensor_platform(self, sensor_range: float, sensor_fov: float) -> PlatformParameters:
+        platform = PlatformParameters.minimal(name="test-rover", max_slope_deg=20.0, max_obstacle_height=0.2)
+        parameters = dict(platform.parameters)
+        parameters["sensor_range"] = ParameterValue(sensor_range, "m", "assumed", "测试观测距离")
+        parameters["sensor_fov"] = ParameterValue(sensor_fov, "deg", "assumed", "测试视场角")
+        return PlatformParameters(name=platform.name, parameters=parameters)
+
     def test_low_confidence_high_value_reachable_goal_ranks_first(self) -> None:
         goals = (
             CandidateGoal(cell=(1, 1), information_gain=0.2, value=0.2, confidence_gain=0.1, risk=0.1, path_cost=1.0),
@@ -91,6 +98,23 @@ class ExplorationGoalTests(unittest.TestCase):
         target = next(candidate for candidate in candidates if candidate.cell == (6, 4))
         self.assertFalse(target.reachable)
         self.assertEqual(astar_path(grid.layers["cost"], constraints.passable_mask, (0, 0), target.cell, grid.resolution).path, tuple())
+
+    def test_generate_candidates_uses_sensor_footprint_for_expected_confidence_gain(self) -> None:
+        grid = generate_sample_grid(width=10, height=7, resolution=1.0)
+        derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
+        grid.layers["confidence"][:] = 0.9
+        grid.layers["value"][:] = 0.0
+        grid.layers["confidence"][3, 7] = 0.1
+        grid.layers["value"][3, 7] = 1.0
+        platform = self.sensor_platform(sensor_range=4.0, sensor_fov=70.0)
+        constraints = generate_hard_constraints(grid, platform)
+        generate_costmap(grid, constraints, platform)
+
+        candidates = generate_exploration_candidates(grid, constraints, start=(0, 3), platform=platform, max_candidates=10)
+
+        forward_candidate = next(candidate for candidate in candidates if candidate.cell == (4, 3))
+        self.assertGreater(forward_candidate.confidence_gain, 0.1)
+        self.assertGreater(forward_candidate.information_gain, 0.1)
 
 
 if __name__ == "__main__":

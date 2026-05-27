@@ -9,7 +9,9 @@ class PackageStructureTests(unittest.TestCase):
             ConfidenceComponent,
             ConfidenceUpdateReport,
             ConfidenceWeights,
+            ObservationModelResult,
             compute_observation_confidence,
+            compute_observation_model,
             derive_confidence_from_posterior,
             fuse_confidence,
             load_confidence_weights,
@@ -36,6 +38,7 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue(callable(generate_sample_grid))
         self.assertTrue(callable(derive_terrain_features))
         self.assertTrue(callable(compute_observation_confidence))
+        self.assertTrue(callable(compute_observation_model))
         self.assertTrue(callable(fuse_confidence))
         self.assertTrue(callable(load_confidence_weights))
         self.assertTrue(callable(update_obstacle_posterior))
@@ -52,6 +55,7 @@ class PackageStructureTests(unittest.TestCase):
         self.assertEqual(ConfidenceComponent.__name__, "ConfidenceComponent")
         self.assertEqual(ConfidenceWeights.__name__, "ConfidenceWeights")
         self.assertEqual(ConfidenceUpdateReport.__name__, "ConfidenceUpdateReport")
+        self.assertEqual(ObservationModelResult.__name__, "ObservationModelResult")
         self.assertEqual(BayesianStateLayer.__name__, "BayesianStateLayer")
         self.assertEqual(CandidateGoal.__name__, "CandidateGoal")
         self.assertTrue(hasattr(ReasonCode, "SLOPE"))

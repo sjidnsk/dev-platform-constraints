@@ -5,20 +5,29 @@ import numpy as np
 from dev_platform_constraints.confidence import (
     ConfidenceComponent,
     ConfidenceWeights,
+    ObservationModelResult,
     compute_consistency_confidence,
     compute_observation_confidence,
+    compute_observation_model,
     compute_recency_confidence,
     compute_resolution_confidence,
     fuse_confidence,
     update_confidence_from_observation,
 )
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
-from dev_platform_constraints.platforms import PlatformParameters
+from dev_platform_constraints.platforms import ParameterValue, PlatformParameters
 from dev_platform_constraints.sample_data import generate_sample_grid
 from dev_platform_constraints.terrain import derive_terrain_features
 
 
 class ConfidenceTests(unittest.TestCase):
+    def sensor_platform(self, sensor_range: float, sensor_fov: float) -> PlatformParameters:
+        platform = PlatformParameters.minimal(name="test-rover", max_slope_deg=20.0, max_obstacle_height=0.2)
+        parameters = dict(platform.parameters)
+        parameters["sensor_range"] = ParameterValue(sensor_range, "m", "assumed", "测试观测距离")
+        parameters["sensor_fov"] = ParameterValue(sensor_fov, "deg", "assumed", "测试视场角")
+        return PlatformParameters(name=platform.name, parameters=parameters)
+
     def test_resolution_confidence_decreases_when_grid_is_coarser_than_planning_scale(self) -> None:
         fine = compute_resolution_confidence(0.5, planning_resolution=1.0, shape=(2, 3))
         coarse = compute_resolution_confidence(2.0, planning_resolution=1.0, shape=(2, 3))
@@ -40,6 +49,31 @@ class ConfidenceTests(unittest.TestCase):
         self.assertEqual(float(observed.values[4, 1]), 0.0)
         self.assertTrue(bool(observed.valid_mask[2, 1]))
         self.assertFalse(bool(observed.valid_mask[4, 1]))
+
+    def test_observation_model_returns_quality_layer_and_component(self) -> None:
+        grid = generate_sample_grid(width=6, height=5, resolution=1.0)
+        platform = self.sensor_platform(sensor_range=4.0, sensor_fov=90.0)
+
+        model = compute_observation_model(grid, platform, observer_cell=(1, 2), heading_deg=0.0)
+
+        self.assertIsInstance(model, ObservationModelResult)
+        self.assertTrue(bool(model.visible_mask[2, 3]))
+        self.assertFalse(bool(model.visible_mask[4, 1]))
+        self.assertGreater(float(model.quality_layer[2, 2]), float(model.quality_layer[2, 5]))
+        self.assertEqual(model.confidence_component.name, "observation")
+        self.assertGreater(float(model.confidence_component.values[2, 3]), 0.0)
+
+    def test_observation_model_can_lower_quality_behind_simple_obstacles(self) -> None:
+        grid = generate_sample_grid(width=7, height=5, resolution=1.0)
+        grid.layers["obstacle"][:] = 0.0
+        grid.layers["obstacle"][2, 3] = 1.0
+        platform = self.sensor_platform(sensor_range=6.0, sensor_fov=60.0)
+
+        open_model = compute_observation_model(grid, platform, observer_cell=(1, 2), heading_deg=0.0)
+        occluded_model = compute_observation_model(grid, platform, observer_cell=(1, 2), heading_deg=0.0, use_simple_occlusion=True)
+
+        self.assertGreater(float(open_model.quality_layer[2, 5]), float(occluded_model.quality_layer[2, 5]))
+        self.assertEqual(float(occluded_model.quality_layer[2, 5]), 0.0)
 
     def test_fuse_confidence_renormalizes_missing_components_and_marks_all_missing_invalid(self) -> None:
         valid = np.array([[True, False], [True, True]])
