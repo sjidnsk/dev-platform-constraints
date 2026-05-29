@@ -11,9 +11,10 @@ class SetupEnvScriptTests(unittest.TestCase):
 
         content = environment_yml.read_text(encoding="utf-8")
 
-        self.assertIn("name: dev-platform-constraints", content)
+        self.assertIn("name: lunar-explorer", content)
         self.assertIn("python=3.12", content)
-        self.assertIn("numpy>=1.26", content)
+        self.assertIn("numpy>=1.26,<2.3", content)
+        self.assertIn("libblas=*=*openblas", content)
         self.assertIn("pip", content)
 
     def test_project_metadata_requires_python_312(self) -> None:
@@ -41,8 +42,6 @@ class SetupEnvScriptTests(unittest.TestCase):
                 "-File",
                 str(script),
                 "-DryRun",
-                "-EnvName",
-                "dev-platform-constraints-test",
                 "-RunValidation",
             ],
             cwd=repo_root,
@@ -54,14 +53,16 @@ class SetupEnvScriptTests(unittest.TestCase):
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output)
         self.assertIn("DRY RUN", output)
+        self.assertIn("D:\\conda_envs\\lunar-explorer", output)
         self.assertIn("conda env create/update", output)
         self.assertIn("environment.yml", output)
-        self.assertIn("conda install -n", output)
+        self.assertIn("conda install -p", output)
         self.assertIn("-c conda-forge", output)
         self.assertIn("python=3.12", output)
         self.assertIn("assert sys.version_info[:2] == (3, 12)", output)
-        self.assertIn("conda run -n", output)
-        self.assertIn("pip install -e", output)
+        self.assertIn("conda run -p", output)
+        self.assertIn("PYTHONPATH", output)
+        self.assertNotIn("pip install -e", output)
         self.assertIn("python -m unittest discover -s tests", output)
         self.assertIn("scripts\\run_minimal_closure.py", output)
         self.assertNotIn("python -m venv", output)
@@ -82,8 +83,6 @@ class SetupEnvScriptTests(unittest.TestCase):
                 bash,
                 str(script),
                 "--dry-run",
-                "--env-name",
-                "dev-platform-constraints-test",
                 "--run-validation",
             ],
             cwd=repo_root,
@@ -95,14 +94,16 @@ class SetupEnvScriptTests(unittest.TestCase):
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output)
         self.assertIn("DRY RUN", output)
+        self.assertIn("lunar-explorer", output)
         self.assertIn("conda env create/update", output)
         self.assertIn("environment.yml", output)
-        self.assertIn("conda install -n", output)
+        self.assertIn("conda install -p", output)
         self.assertIn("-c conda-forge", output)
         self.assertIn("python=3.12", output)
         self.assertIn("assert sys.version_info[:2] == (3, 12)", output)
-        self.assertIn("conda run -n", output)
-        self.assertIn("pip install -e", output)
+        self.assertIn("conda run -p", output)
+        self.assertIn("PYTHONPATH", output)
+        self.assertNotIn("pip install -e", output)
         self.assertIn("python -m unittest discover -s tests", output)
         self.assertIn("scripts/run_minimal_closure.py", output)
         self.assertNotIn("python -m venv", output)

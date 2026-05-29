@@ -1,6 +1,6 @@
 param(
     [string]$Conda = "conda",
-    [string]$EnvName = "dev-platform-constraints",
+    [string]$EnvPath = "D:\conda_envs\lunar-explorer",
     [switch]$RunValidation,
     [switch]$DryRun
 )
@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $EnvironmentFile = Join-Path $RepoRoot "environment.yml"
+$SourcePath = Join-Path $RepoRoot "src"
 $PythonSpec = "python=3.12"
 $PythonVersionCheck = "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.version)"
 
@@ -40,49 +41,64 @@ function Invoke-NativeCommand {
     }
 }
 
-function Test-CondaEnv {
-    param([string]$Name)
+function Invoke-WithProjectPythonPath {
+    param([scriptblock]$Action)
 
-    & $Conda run -n $Name python --version *> $null
+    $PreviousPythonPath = [Environment]::GetEnvironmentVariable("PYTHONPATH", "Process")
+    [Environment]::SetEnvironmentVariable("PYTHONPATH", $SourcePath, "Process")
+    try {
+        & $Action
+    } finally {
+        [Environment]::SetEnvironmentVariable("PYTHONPATH", $PreviousPythonPath, "Process")
+    }
+}
+
+function Test-CondaEnv {
+    & $Conda run -p $EnvPath python --version *> $null
     return $LASTEXITCODE -eq 0
 }
 
 Write-Host "Repository: $RepoRoot"
-Write-Host "Conda environment: $EnvName"
+Write-Host "Conda environment: $EnvPath"
 Write-Host "Environment file: $EnvironmentFile"
+Write-Host "Project PYTHONPATH: $SourcePath"
 
 Invoke-SetupStep `
-    -Display "$Conda env create/update -n `"$EnvName`" -f `"$EnvironmentFile`"" `
+    -Display "$Conda env create/update -p `"$EnvPath`" -f `"$EnvironmentFile`"" `
     -Action {
-        if (Test-CondaEnv -Name $EnvName) {
-            Invoke-NativeCommand -Executable $Conda -Arguments @("env", "update", "-n", $EnvName, "-f", $EnvironmentFile, "--prune")
+        if (Test-CondaEnv) {
+            Invoke-NativeCommand -Executable $Conda -Arguments @("env", "update", "-p", $EnvPath, "-f", $EnvironmentFile, "--prune")
         } else {
-            Invoke-NativeCommand -Executable $Conda -Arguments @("env", "create", "-n", $EnvName, "-f", $EnvironmentFile)
+            Invoke-NativeCommand -Executable $Conda -Arguments @("env", "create", "-p", $EnvPath, "-f", $EnvironmentFile)
         }
     }
 
 Invoke-SetupStep `
-    -Display "$Conda install -n `"$EnvName`" -c conda-forge $PythonSpec --yes" `
-    -Action { Invoke-NativeCommand -Executable $Conda -Arguments @("install", "-n", $EnvName, "-c", "conda-forge", $PythonSpec, "--yes") }
+    -Display "$Conda install -p `"$EnvPath`" -c conda-forge $PythonSpec --yes" `
+    -Action { Invoke-NativeCommand -Executable $Conda -Arguments @("install", "-p", $EnvPath, "-c", "conda-forge", $PythonSpec, "--yes") }
 
 Invoke-SetupStep `
-    -Display "$Conda run -n `"$EnvName`" python -c `"$PythonVersionCheck`"" `
-    -Action { Invoke-NativeCommand -Executable $Conda -Arguments @("run", "-n", $EnvName, "python", "-c", $PythonVersionCheck) }
-
-Invoke-SetupStep `
-    -Display "$Conda run -n `"$EnvName`" python -m pip install -e `"$RepoRoot`"" `
-    -Action { Invoke-NativeCommand -Executable $Conda -Arguments @("run", "-n", $EnvName, "python", "-m", "pip", "install", "-e", $RepoRoot) }
+    -Display "$Conda run -p `"$EnvPath`" python -c `"$PythonVersionCheck`"" `
+    -Action { Invoke-NativeCommand -Executable $Conda -Arguments @("run", "-p", $EnvPath, "python", "-c", $PythonVersionCheck) }
 
 if ($RunValidation) {
     Push-Location $RepoRoot
     try {
         Invoke-SetupStep `
-            -Display "$Conda run -n `"$EnvName`" python -m unittest discover -s tests" `
-            -Action { Invoke-NativeCommand -Executable $Conda -Arguments @("run", "-n", $EnvName, "python", "-m", "unittest", "discover", "-s", "tests") }
+            -Display "PYTHONPATH=`"$SourcePath`"; $Conda run -p `"$EnvPath`" python -m unittest discover -s tests" `
+            -Action {
+                Invoke-WithProjectPythonPath {
+                    Invoke-NativeCommand -Executable $Conda -Arguments @("run", "-p", $EnvPath, "python", "-m", "unittest", "discover", "-s", "tests")
+                }
+            }
 
         Invoke-SetupStep `
-            -Display "$Conda run -n `"$EnvName`" python scripts\run_minimal_closure.py" `
-            -Action { Invoke-NativeCommand -Executable $Conda -Arguments @("run", "-n", $EnvName, "python", (Join-Path $RepoRoot "scripts\run_minimal_closure.py")) }
+            -Display "PYTHONPATH=`"$SourcePath`"; $Conda run -p `"$EnvPath`" python scripts\run_minimal_closure.py" `
+            -Action {
+                Invoke-WithProjectPythonPath {
+                    Invoke-NativeCommand -Executable $Conda -Arguments @("run", "-p", $EnvPath, "python", (Join-Path $RepoRoot "scripts\run_minimal_closure.py"))
+                }
+            }
     } finally {
         Pop-Location
     }
@@ -90,6 +106,7 @@ if ($RunValidation) {
 
 Write-Host ""
 Write-Host "Next commands:"
-Write-Host "  conda activate $EnvName"
+Write-Host "  conda activate $EnvPath"
+Write-Host "  `$env:PYTHONPATH='src'"
 Write-Host "  python -m unittest discover -s tests"
 Write-Host "  python scripts\run_minimal_closure.py"

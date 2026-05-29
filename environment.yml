@@ -1,8 +1,10 @@
-name: dev-platform-constraints
+name: lunar-explorer
 channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - numpy>=1.26
+  - libblas=*=*openblas
+  - numpy>=1.26,<2.3
   - matplotlib>=3.8
+  - pytest>=8
   - pip
