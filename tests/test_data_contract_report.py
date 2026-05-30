@@ -33,8 +33,9 @@ class DataContractReportTests(unittest.TestCase):
 
     def test_run_minimal_closure_outputs_data_contract_report(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
+        script_path = Path("scripts") / "run_minimal_closure.py"
         result = subprocess.run(
-            [sys.executable, "scripts\\run_minimal_closure.py"],
+            [sys.executable, str(script_path)],
             cwd=repo_root,
             text=True,
             stdout=subprocess.PIPE,
