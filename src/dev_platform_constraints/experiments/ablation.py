@@ -36,6 +36,7 @@ class AblationScenario:
     occlusion_obstacles: tuple[tuple[int, int], ...] = tuple()
     use_simple_occlusion: bool = False
     lookahead_steps: int = 1
+    scenario_group: str = "unknown"
     map_source: MapSource = MapSource()
 
 
@@ -145,6 +146,7 @@ def _parse_scenario(raw: dict[str, Any], base_dir: Path | None = None) -> Ablati
         occlusion_obstacles=tuple(_cell(cell, "occlusion_obstacles", width, height) for cell in raw.get("occlusion_obstacles", ())),
         use_simple_occlusion=bool(raw.get("use_simple_occlusion", False)),
         lookahead_steps=max(1, int(raw.get("lookahead_steps", 1))),
+        scenario_group=str(raw.get("scenario_group", "unknown")),
         map_source=_parse_map_source(raw, base_dir),
     )
 

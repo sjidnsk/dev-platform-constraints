@@ -210,8 +210,10 @@ PYTHONPATH=src python scripts/export_path_planner_sidecars.py \
 - `npz_low_confidence_risk_band`
 
 `scripts/generate_npz_validation_maps.py` 还支持 `--scenario-set stress` 和
-`--scenario-set all`。stress 集新增近阻断走廊、高风险价值陷阱和密集岩石收缩通道，用于确认上层
-`path-planner` 反馈能够产生 failure/replan 诊断，而不是只重复 easy smoke 验证。
+`--scenario-set all`。stress 集包含近阻断走廊、高风险价值陷阱、密集岩石收缩通道和
+`mixed_stress` 绕行场景。`mixed_stress` 会同时保留 path-planner 可达候选、会触发
+failure/replan 的候选和契约层 blocked 候选，用于确认上层反馈既能解释失败，又能比较可达替代目标，
+而不是只重复 easy smoke 验证。
 
 ## 假设
 

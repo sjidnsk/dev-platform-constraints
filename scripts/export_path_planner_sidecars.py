@@ -73,6 +73,7 @@ def main() -> None:
         "exports": [
             {
                 "scenario_id": scenario.scenario_id,
+                "scenario_group": scenario.scenario_group,
                 "contract": str(output_dir / f"{scenario.scenario_id}.contract.json"),
                 "sidecar": str(output_dir / f"{scenario.scenario_id}.path-planner-sidecar.json"),
             }
@@ -100,11 +101,16 @@ def main() -> None:
             constraints,
             start=scenario.start_cell,
             platform=platform,
-            max_candidates=12,
+            max_candidates=(grid.width * grid.height if scenario.scenario_group == "mixed_stress" else 12),
             lookahead_steps=scenario.lookahead_steps,
             use_simple_occlusion=scenario.use_simple_occlusion,
         )
-        scored_goals = rank_exploration_goals(candidates)[: max(args.top_k, 0)]
+        scored_goals = _select_scored_goals_for_export(
+            rank_exploration_goals(candidates),
+            scenario_group=scenario.scenario_group,
+            top_k=max(args.top_k, 0),
+            passable_mask=constraints.passable_mask,
+        )
         goal_sequences = evaluate_goal_sequences(candidates, depth=3, beam_width=max(args.top_k, 1))[
             : max(args.top_k, 0)
         ]
@@ -126,6 +132,7 @@ def main() -> None:
             },
             platform="yutu2",
         )
+        sidecar["metadata"]["scenario_group"] = scenario.scenario_group
         (output_dir / f"{scenario.scenario_id}.contract.json").write_text(
             json.dumps(contract, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -137,6 +144,70 @@ def main() -> None:
 
     (output_dir / "manifest.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
+def _select_scored_goals_for_export(scored_goals, *, scenario_group: str, top_k: int, passable_mask=None):
+    if top_k <= 0:
+        return tuple()
+    selected = list(scored_goals[:top_k])
+    if scenario_group != "mixed_stress" or not selected:
+        return tuple(selected)
+
+    safe_reachable = next(
+        (
+            goal
+            for goal in scored_goals
+            if goal.candidate.reachable and _clearance_cells(passable_mask, goal.candidate.cell) >= 3
+        ),
+        None,
+    )
+    unsafe_reachable = next(
+        (
+            goal
+            for goal in scored_goals
+            if goal.candidate.reachable and _clearance_cells(passable_mask, goal.candidate.cell) < 3
+        ),
+        None,
+    )
+    blocked = next((goal for goal in scored_goals if not goal.candidate.reachable), None)
+    replacements = [
+        goal
+        for goal in (unsafe_reachable, safe_reachable, blocked)
+        if goal is not None
+    ]
+    replacements.extend(selected)
+
+    deduped = []
+    seen = set()
+    for goal in replacements:
+        cell = goal.candidate.cell
+        if cell in seen:
+            continue
+        seen.add(cell)
+        deduped.append(goal)
+    for goal in scored_goals:
+        if len(deduped) >= top_k:
+            break
+        cell = goal.candidate.cell
+        if cell not in seen:
+            seen.add(cell)
+            deduped.append(goal)
+    return tuple(deduped[:top_k])
+
+
+def _clearance_cells(passable_mask, cell) -> int:
+    if passable_mask is None:
+        return 999
+    x, y = cell
+    blocked = [
+        (int(blocked_x), int(blocked_y))
+        for blocked_y, row in enumerate(passable_mask)
+        for blocked_x, passable in enumerate(row)
+        if not bool(passable)
+    ]
+    if not blocked:
+        return 999
+    return min(max(abs(x - blocked_x), abs(y - blocked_y)) for blocked_x, blocked_y in blocked)
 
 
 if __name__ == "__main__":

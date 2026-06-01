@@ -135,6 +135,30 @@ STRESS_VALIDATION_SPECS = (
         ),
         scenario_group="stress",
     ),
+    ValidationMapSpec(
+        scenario_id="npz_mixed_stress_detour",
+        width=26,
+        height=14,
+        resolution=0.5,
+        seed=504,
+        observations=(
+            {"observer_cell": [1, 6], "heading_deg": 0.0},
+            {"observer_cell": [7, 3], "heading_deg": 12.0},
+        ),
+        start_cell=(1, 6),
+        goal_cell=(25, 10),
+        low_confidence_band=(3, 14),
+        value_region=(3, 25, 3, 12),
+        risk_region=(10, 18, 4, 11),
+        blocked_rects=(
+            (11, 13, 2, 8),
+            (11, 13, 10, 14),
+            (18, 20, 0, 5),
+            (18, 20, 7, 14),
+            (22, 24, 4, 10),
+        ),
+        scenario_group="mixed_stress",
+    ),
 )
 
 SCENARIO_SETS = {

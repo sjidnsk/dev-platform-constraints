@@ -92,22 +92,68 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = json.loads(result.stdout)
         scenario_ids = {item["scenario_id"] for item in summary["scenarios"]}
-        self.assertEqual(
-            scenario_ids,
-            {
-                "npz_near_blocked_corridor",
-                "npz_high_risk_value_trap",
-                "npz_dense_rock_choke",
-            },
-        )
+        self.assertIn("npz_mixed_stress_detour", scenario_ids)
         scenarios = load_ablation_scenarios(scenario_config)
-        self.assertEqual(len(scenarios), 3)
+        self.assertEqual(len(scenarios), 4)
         for scenario in scenarios:
             with np.load(Path(scenario.map_source.path), allow_pickle=False) as grid:
                 self.assertEqual(grid["obstacle"].shape, (scenario.height, scenario.width))
                 self.assertGreater(np.count_nonzero(grid["obstacle"] >= 0.5), 0)
                 self.assertLess(float(np.min(grid["confidence"])), 0.5)
                 self.assertTrue(np.any(grid["value"] > 0.0))
+
+    def test_mixed_stress_export_has_reachable_and_blocked_candidates(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        root = Path(tempfile.mkdtemp(prefix="npz-validation-mixed-"))
+        scenario_config = root / "npz_validation_scenarios.json"
+
+        generated = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "generate_npz_validation_maps.py"),
+                "--scenario-set",
+                "stress",
+                "--output-dir",
+                str(root / "maps"),
+                "--scenario-config",
+                str(scenario_config),
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
+
+        exported = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "export_path_planner_sidecars.py"),
+                "--scenario-config",
+                str(scenario_config),
+                "--output-dir",
+                str(root / "exports"),
+                "--top-k",
+                "6",
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(exported.returncode, 0, exported.stdout + exported.stderr)
+
+        scenarios = json.loads(scenario_config.read_text(encoding="utf-8"))["scenarios"]
+        mixed = [item for item in scenarios if item["scenario_group"] == "mixed_stress"]
+        self.assertEqual([item["scenario_id"] for item in mixed], ["npz_mixed_stress_detour"])
+        contract = json.loads((root / "exports" / "npz_mixed_stress_detour.contract.json").read_text(encoding="utf-8"))
+        sidecar = json.loads(
+            (root / "exports" / "npz_mixed_stress_detour.path-planner-sidecar.json").read_text(encoding="utf-8")
+        )
+        reachable_values = {bool(goal["reachable"]) for goal in contract["top_goals"]}
+        self.assertEqual(reachable_values, {False, True})
+        self.assertEqual(len(sidecar["cost"]), contract["grid"]["height"])
+        self.assertEqual(len(sidecar["passable_mask"][0]), contract["grid"]["width"])
 
     def test_tracked_npz_validation_scenario_config_points_to_generated_maps(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
