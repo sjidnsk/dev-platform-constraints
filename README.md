@@ -190,8 +190,24 @@ python scripts\run_confidence_ablation.py --scenario-config configs\ablation\npz
 - 覆盖率状态维护：新增运行时 `coverage_mask`、覆盖率更新和观测覆盖收益估计能力，只统计 `valid_mask` 内累计唯一可见栅格；候选目标同步输出 `expected_new_coverage_area` 和 `expected_coverage_rate_delta`，供上层 `model-explorer` 做覆盖率优先排序。
 - P2 序列解释：`evaluate_goal_sequences(...)` 输出去重后的序列覆盖面积、每段路径代价、累计风险、不可达原因和风险原因；消融 JSON/CSV/HTML 同步保留 Top 序列解释字段。
 - `model-explorer` 对接：稳定 JSON 契约由 `build_model_explorer_contract(...)` 生成，字段说明见 `docs/model-explorer-interface.md`，完整示例见 `docs/model-explorer-contract-example.json`，最小可消费示例见 `docs/model-explorer-minimal-example.json`。
+- `path-planner` sidecar 对接：`build_path_planner_sidecar(...)` 和 `scripts/export_path_planner_sidecars.py` 可为半真实场景导出 `path-planner-sidecar/v1`，补充完整 `cost`、`passable_mask` 和可选 terrain layers，避免 `model-explorer` 在可信实验中使用 open-grid fallback。
 
 外部 `.npz` 输入首版只依赖 `numpy`，不引入 GIS 重型依赖；默认可信度配置仍不自动切换。
+
+导出半真实联调输入：
+
+```bash
+python scripts/generate_npz_validation_maps.py --output-dir data/validation_maps --scenario-config outputs/npz_validation_scenarios.generated.json
+PYTHONPATH=src python scripts/export_path_planner_sidecars.py \
+  --scenario-config outputs/npz_validation_scenarios.generated.json \
+  --output-dir outputs/path_planner_sidecars
+```
+
+输出目录包含每个场景的 `*.contract.json` 和 `*.path-planner-sidecar.json`，以及 `manifest.json`。当前固定覆盖：
+
+- `npz_shadow_corridor`
+- `npz_rock_field_multi_pose`
+- `npz_low_confidence_risk_band`
 
 ## 假设
 

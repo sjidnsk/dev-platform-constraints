@@ -74,6 +74,89 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         self.assertEqual({scenario.map_source.kind for scenario in scenarios}, {"npz_grid"})
         self.assertTrue(all("data" in str(scenario.map_source.path) for scenario in scenarios))
 
+    def test_path_planner_sidecar_export_dry_run_does_not_write_files(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        output_dir = Path(tempfile.mkdtemp(prefix="path-sidecar-dry-run-")) / "exports"
+        script = repo_root / "scripts" / "export_path_planner_sidecars.py"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--scenario-config",
+                str(repo_root / "configs" / "ablation" / "npz_validation_scenarios.json"),
+                "--output-dir",
+                str(output_dir),
+                "--dry-run",
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(len(summary["exports"]), 3)
+        self.assertFalse(output_dir.exists())
+
+    def test_path_planner_sidecar_export_writes_three_npz_contract_pairs(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        root = Path(tempfile.mkdtemp(prefix="path-sidecar-export-"))
+        generator = repo_root / "scripts" / "generate_npz_validation_maps.py"
+        exporter = repo_root / "scripts" / "export_path_planner_sidecars.py"
+        scenario_config = root / "npz_validation_scenarios.json"
+
+        generated = subprocess.run(
+            [
+                sys.executable,
+                str(generator),
+                "--output-dir",
+                str(root / "maps"),
+                "--scenario-config",
+                str(scenario_config),
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
+
+        exported = subprocess.run(
+            [
+                sys.executable,
+                str(exporter),
+                "--scenario-config",
+                str(scenario_config),
+                "--output-dir",
+                str(root / "exports"),
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(exported.returncode, 0, exported.stdout + exported.stderr)
+        summary = json.loads(exported.stdout)
+        scenario_ids = {item["scenario_id"] for item in summary["exports"]}
+        self.assertEqual(
+            scenario_ids,
+            {"npz_shadow_corridor", "npz_rock_field_multi_pose", "npz_low_confidence_risk_band"},
+        )
+        self.assertTrue((root / "exports" / "manifest.json").exists())
+        for item in summary["exports"]:
+            contract = json.loads(Path(item["contract"]).read_text(encoding="utf-8"))
+            sidecar = json.loads(Path(item["sidecar"]).read_text(encoding="utf-8"))
+            self.assertEqual(contract["schema_version"], "model-explorer-contract/v1")
+            self.assertNotIn("cost", contract)
+            self.assertNotIn("passable_mask", contract)
+            self.assertEqual(sidecar["schema_version"], "path-planner-sidecar/v1")
+            self.assertIn("cost", sidecar)
+            self.assertIn("passable_mask", sidecar)
+            self.assertEqual(sidecar["metadata"]["scenario_id"], item["scenario_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

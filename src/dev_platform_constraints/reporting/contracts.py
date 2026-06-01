@@ -180,3 +180,62 @@ def build_model_explorer_contract(
             "top_sequences.risk_reasons",
         ],
     }
+
+
+def build_path_planner_sidecar(
+    grid: GridMap,
+    constraints: ConstraintResult,
+    *,
+    scenario_id: str,
+    map_source: dict[str, Any] | None = None,
+    platform: str | None = None,
+    include_terrain_layers: bool = True,
+) -> dict[str, Any]:
+    """构建 path-planner-request/v1 可直接消费的地图 sidecar。
+
+    该 sidecar 不改变 model-explorer-contract/v1；它补充完整代价图和硬约束掩膜，
+    供 model-explorer 在路径评估阶段传给 path-planner。
+    """
+
+    cost = np.asarray(grid.require_layer("cost"), dtype=float)
+    passable_mask = np.asarray(constraints.passable_mask, dtype=bool)
+    if cost.shape != grid.shape:
+        raise ValueError("cost layer shape must match grid shape")
+    if passable_mask.shape != grid.shape:
+        raise ValueError("passable_mask shape must match grid shape")
+
+    payload: dict[str, Any] = {
+        "schema_version": "path-planner-sidecar/v1",
+        "grid": {
+            "width": grid.width,
+            "height": grid.height,
+            "resolution": grid.resolution,
+            "frame_id": grid.frame_id,
+            "origin": list(grid.origin),
+        },
+        "cost": cost.tolist(),
+        "passable_mask": passable_mask.tolist(),
+        "metadata": {
+            "source": "dev-platform-constraints",
+            "scenario_id": scenario_id,
+            "map_source": dict(map_source or {}),
+            "platform": platform,
+            "blocked_count": int(np.count_nonzero(~passable_mask)),
+            "passable_ratio": float(np.mean(passable_mask)) if passable_mask.size else 0.0,
+        },
+    }
+    if include_terrain_layers:
+        payload["terrain_layers"] = {
+            name: np.asarray(grid.layers[name]).tolist()
+            for name in (
+                "slope",
+                "roughness",
+                "illumination",
+                "confidence",
+                "obstacle",
+                "obstacle_height",
+                "traversability",
+            )
+            if name in grid.layers
+        }
+    return payload

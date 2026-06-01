@@ -2,6 +2,8 @@ import json
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 from dev_platform_constraints.exploration import evaluate_goal_sequences, generate_exploration_candidates, rank_exploration_goals
 from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
 from dev_platform_constraints.platforms import PlatformParameters
@@ -9,6 +11,7 @@ from dev_platform_constraints.reporting import (
     MODEL_EXPLORER_SCHEMA_VERSION,
     MODEL_EXPLORER_STABLE_FIELDS,
     build_model_explorer_contract,
+    build_path_planner_sidecar,
 )
 from dev_platform_constraints.sample_data import generate_sample_grid
 from dev_platform_constraints.terrain import derive_terrain_features
@@ -53,6 +56,37 @@ class ModelExplorerContractTests(unittest.TestCase):
         self.assertIn("top_goals.expected_new_coverage_area", contract["experimental_fields"])
         self.assertIn("top_goals.expected_coverage_rate_delta", contract["experimental_fields"])
         self.assertIn("top_goals.energy_cost", contract["experimental_fields"])
+
+    def test_path_planner_sidecar_contains_cost_and_passable_mask(self) -> None:
+        grid = generate_sample_grid(width=8, height=6, resolution=0.5)
+        derive_terrain_features(grid, roughness_window_size=3, roughness_normalization_height=0.3)
+        platform = PlatformParameters.minimal(name="test-rover", max_slope_deg=20.0, max_obstacle_height=0.2)
+        constraints = generate_hard_constraints(grid, platform)
+        generate_costmap(grid, constraints, platform)
+
+        sidecar = build_path_planner_sidecar(
+            grid,
+            constraints,
+            scenario_id="unit-sidecar",
+            map_source={"kind": "sample_grid"},
+            platform="test-rover",
+        )
+
+        self.assertEqual(sidecar["schema_version"], "path-planner-sidecar/v1")
+        self.assertEqual(sidecar["grid"]["width"], 8)
+        self.assertEqual(len(sidecar["cost"]), 6)
+        self.assertEqual(len(sidecar["cost"][0]), 8)
+        self.assertEqual(len(sidecar["passable_mask"]), 6)
+        self.assertIn("confidence", sidecar["terrain_layers"])
+        self.assertEqual(sidecar["metadata"]["scenario_id"], "unit-sidecar")
+        cost = np.asarray(sidecar["cost"], dtype=float)
+        passable_mask = np.asarray(sidecar["passable_mask"])
+        self.assertEqual(cost.shape, (6, 8))
+        self.assertEqual(passable_mask.shape, (6, 8))
+        self.assertEqual(passable_mask.dtype, np.dtype("bool"))
+        self.assertTrue(np.all(cost >= 0.0))
+        self.assertTrue(np.array_equal(passable_mask, constraints.passable_mask))
+        self.assertTrue(np.all(~passable_mask[constraints.reason_layer != 0]))
 
     def test_documented_contract_example_matches_stable_sections(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]

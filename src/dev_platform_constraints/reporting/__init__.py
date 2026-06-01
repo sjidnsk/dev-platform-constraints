@@ -5,6 +5,7 @@ from .contracts import (
     MODEL_EXPLORER_STABLE_FIELDS,
     build_data_contract_report,
     build_model_explorer_contract,
+    build_path_planner_sidecar,
 )
 from .visualization import VisualizationReport, render_closure_report
 
@@ -14,5 +15,6 @@ __all__ = [
     "VisualizationReport",
     "build_data_contract_report",
     "build_model_explorer_contract",
+    "build_path_planner_sidecar",
     "render_closure_report",
 ]
