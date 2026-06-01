@@ -66,6 +66,49 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
                 with self.subTest(layer=name):
                     self.assertTrue(np.array_equal(grid_a[name], grid_b[name]))
 
+    def test_generator_can_emit_stress_scenarios_with_blocked_regions(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "scripts" / "generate_npz_validation_maps.py"
+        root = Path(tempfile.mkdtemp(prefix="npz-validation-stress-"))
+        scenario_config = root / "npz_validation_scenarios.json"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--scenario-set",
+                "stress",
+                "--output-dir",
+                str(root / "maps"),
+                "--scenario-config",
+                str(scenario_config),
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        scenario_ids = {item["scenario_id"] for item in summary["scenarios"]}
+        self.assertEqual(
+            scenario_ids,
+            {
+                "npz_near_blocked_corridor",
+                "npz_high_risk_value_trap",
+                "npz_dense_rock_choke",
+            },
+        )
+        scenarios = load_ablation_scenarios(scenario_config)
+        self.assertEqual(len(scenarios), 3)
+        for scenario in scenarios:
+            with np.load(Path(scenario.map_source.path), allow_pickle=False) as grid:
+                self.assertEqual(grid["obstacle"].shape, (scenario.height, scenario.width))
+                self.assertGreater(np.count_nonzero(grid["obstacle"] >= 0.5), 0)
+                self.assertLess(float(np.min(grid["confidence"])), 0.5)
+                self.assertTrue(np.any(grid["value"] > 0.0))
+
     def test_tracked_npz_validation_scenario_config_points_to_generated_maps(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         scenarios = load_ablation_scenarios(repo_root / "configs" / "ablation" / "npz_validation_scenarios.json")

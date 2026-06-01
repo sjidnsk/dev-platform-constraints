@@ -27,13 +27,15 @@ class ValidationMapSpec:
     low_confidence_band: tuple[int, int]
     value_region: tuple[int, int, int, int]
     risk_region: tuple[int, int, int, int] | None = None
+    blocked_rects: tuple[tuple[int, int, int, int], ...] = tuple()
+    scenario_group: str = "smoke"
 
     @property
     def filename(self) -> str:
         return f"{self.scenario_id}.npz"
 
 
-VALIDATION_SPECS = (
+SMOKE_VALIDATION_SPECS = (
     ValidationMapSpec(
         scenario_id="npz_shadow_corridor",
         width=16,
@@ -77,6 +79,71 @@ VALIDATION_SPECS = (
     ),
 )
 
+STRESS_VALIDATION_SPECS = (
+    ValidationMapSpec(
+        scenario_id="npz_near_blocked_corridor",
+        width=20,
+        height=12,
+        resolution=0.5,
+        seed=501,
+        observations=({"observer_cell": [0, 6], "heading_deg": 0.0},),
+        start_cell=(1, 6),
+        goal_cell=(19, 8),
+        low_confidence_band=(7, 11),
+        value_region=(15, 20, 4, 10),
+        risk_region=(7, 11, 0, 12),
+        blocked_rects=((9, 10, 0, 6), (9, 10, 7, 12)),
+        scenario_group="stress",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_high_risk_value_trap",
+        width=22,
+        height=14,
+        resolution=0.5,
+        seed=502,
+        observations=({"observer_cell": [0, 3], "heading_deg": 4.0},),
+        start_cell=(1, 3),
+        goal_cell=(21, 12),
+        low_confidence_band=(8, 13),
+        value_region=(16, 22, 8, 14),
+        risk_region=(8, 16, 5, 12),
+        blocked_rects=((10, 12, 4, 9), (13, 15, 7, 12)),
+        scenario_group="stress",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_dense_rock_choke",
+        width=24,
+        height=16,
+        resolution=0.5,
+        seed=503,
+        observations=(
+            {"observer_cell": [0, 6], "heading_deg": 0.0},
+            {"observer_cell": [0, 11], "heading_deg": 0.0},
+        ),
+        start_cell=(1, 8),
+        goal_cell=(23, 10),
+        low_confidence_band=(9, 14),
+        value_region=(18, 24, 5, 14),
+        risk_region=(9, 15, 4, 13),
+        blocked_rects=(
+            (8, 9, 0, 7),
+            (8, 9, 9, 16),
+            (12, 13, 2, 10),
+            (12, 13, 12, 16),
+            (16, 17, 0, 5),
+            (16, 17, 7, 16),
+        ),
+        scenario_group="stress",
+    ),
+)
+
+SCENARIO_SETS = {
+    "smoke": SMOKE_VALIDATION_SPECS,
+    "stress": STRESS_VALIDATION_SPECS,
+    "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
+}
+VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
+
 
 def _validation_layers(spec: ValidationMapSpec) -> dict[str, np.ndarray | float | tuple[float, float]]:
     rng = np.random.default_rng(spec.seed)
@@ -112,6 +179,11 @@ def _validation_layers(spec: ValidationMapSpec) -> dict[str, np.ndarray | float 
         rx0, rx1, ry0, ry1 = spec.risk_region
         illumination[ry0:ry1, rx0:rx1] = np.minimum(illumination[ry0:ry1, rx0:rx1], 0.28)
         confidence[ry0:ry1, rx0:rx1] = np.minimum(confidence[ry0:ry1, rx0:rx1], 0.32)
+    for x0, x1, y0, y1 in spec.blocked_rects:
+        obstacle[y0:y1, x0:x1] = 1.0
+        obstacle_height[y0:y1, x0:x1] = 0.28
+        illumination[y0:y1, x0:x1] = np.minimum(illumination[y0:y1, x0:x1], 0.20)
+        confidence[y0:y1, x0:x1] = np.minimum(confidence[y0:y1, x0:x1], 0.25)
 
     value = np.zeros((spec.height, spec.width), dtype=float)
     vx0, vx1, vy0, vy1 = spec.value_region
@@ -145,16 +217,28 @@ def _scenario_entry(spec: ValidationMapSpec, map_path: Path) -> dict[str, object
         "recency_time_constant": 10.0,
         "low_confidence_band": list(spec.low_confidence_band),
         "value_region": list(spec.value_region),
+        "scenario_group": spec.scenario_group,
     }
     if spec.risk_region is not None:
         scenario["risk_region"] = list(spec.risk_region)
+    if spec.blocked_rects:
+        scenario["blocked_rects"] = [list(rect) for rect in spec.blocked_rects]
     return scenario
 
 
-def build_scenario_config(output_dir: Path) -> dict[str, object]:
+def _specs_for_set(scenario_set: str) -> tuple[ValidationMapSpec, ...]:
+    try:
+        return SCENARIO_SETS[scenario_set]
+    except KeyError as exc:
+        raise ValueError(f"unknown scenario set: {scenario_set}") from exc
+
+
+def build_scenario_config(output_dir: Path, scenario_set: str = "smoke") -> dict[str, object]:
+    specs = _specs_for_set(scenario_set)
     return {
         "terrain_likelihood_config": str(ROOT / "configs" / "confidence" / "terrain_likelihood_default.json"),
-        "scenarios": [_scenario_entry(spec, output_dir / spec.filename) for spec in VALIDATION_SPECS],
+        "scenario_set": scenario_set,
+        "scenarios": [_scenario_entry(spec, output_dir / spec.filename) for spec in specs],
     }
 
 
@@ -162,6 +246,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成可复现的 npz_grid 外部地图验证集。")
     parser.add_argument("--output-dir", default=str(ROOT / "data" / "validation_maps"), help="输出 .npz 地图目录。")
     parser.add_argument("--scenario-config", default=None, help="可选：同时写出场景配置 JSON。")
+    parser.add_argument(
+        "--scenario-set",
+        choices=tuple(SCENARIO_SETS),
+        default="smoke",
+        help="选择要生成的验证场景集：smoke、stress 或 all。",
+    )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
     return parser.parse_args()
 
@@ -169,10 +259,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    scenario_config = build_scenario_config(output_dir)
+    specs = _specs_for_set(args.scenario_set)
+    scenario_config = build_scenario_config(output_dir, args.scenario_set)
     summary = {
         "output_dir": str(output_dir),
         "scenario_config": str(args.scenario_config) if args.scenario_config else None,
+        "scenario_set": args.scenario_set,
         "scenarios": [
             {
                 "scenario_id": spec.scenario_id,
@@ -180,8 +272,9 @@ def main() -> None:
                 "width": spec.width,
                 "height": spec.height,
                 "seed": spec.seed,
+                "scenario_group": spec.scenario_group,
             }
-            for spec in VALIDATION_SPECS
+            for spec in specs
         ],
     }
     if args.dry_run:
@@ -189,7 +282,7 @@ def main() -> None:
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    for spec in VALIDATION_SPECS:
+    for spec in specs:
         np.savez(output_dir / spec.filename, **_validation_layers(spec))
 
     if args.scenario_config:

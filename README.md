@@ -197,7 +197,7 @@ python scripts\run_confidence_ablation.py --scenario-config configs\ablation\npz
 导出半真实联调输入：
 
 ```bash
-python scripts/generate_npz_validation_maps.py --output-dir data/validation_maps --scenario-config outputs/npz_validation_scenarios.generated.json
+python scripts/generate_npz_validation_maps.py --scenario-set smoke --output-dir data/validation_maps --scenario-config outputs/npz_validation_scenarios.generated.json
 PYTHONPATH=src python scripts/export_path_planner_sidecars.py \
   --scenario-config outputs/npz_validation_scenarios.generated.json \
   --output-dir outputs/path_planner_sidecars
@@ -208,6 +208,10 @@ PYTHONPATH=src python scripts/export_path_planner_sidecars.py \
 - `npz_shadow_corridor`
 - `npz_rock_field_multi_pose`
 - `npz_low_confidence_risk_band`
+
+`scripts/generate_npz_validation_maps.py` 还支持 `--scenario-set stress` 和
+`--scenario-set all`。stress 集新增近阻断走廊、高风险价值陷阱和密集岩石收缩通道，用于确认上层
+`path-planner` 反馈能够产生 failure/replan 诊断，而不是只重复 easy smoke 验证。
 
 ## 假设
 
