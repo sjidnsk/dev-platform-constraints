@@ -93,14 +93,30 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         summary = json.loads(result.stdout)
         scenario_ids = {item["scenario_id"] for item in summary["scenarios"]}
         self.assertIn("npz_mixed_stress_detour", scenario_ids)
+        self.assertIn("npz_path_complexity_benefit_probe", scenario_ids)
         scenarios = load_ablation_scenarios(scenario_config)
-        self.assertEqual(len(scenarios), 4)
+        self.assertEqual(len(scenarios), 5)
         for scenario in scenarios:
             with np.load(Path(scenario.map_source.path), allow_pickle=False) as grid:
                 self.assertEqual(grid["obstacle"].shape, (scenario.height, scenario.width))
                 self.assertGreater(np.count_nonzero(grid["obstacle"] >= 0.5), 0)
                 self.assertLess(float(np.min(grid["confidence"])), 0.5)
                 self.assertTrue(np.any(grid["value"] > 0.0))
+
+        scenario_entries = json.loads(scenario_config.read_text(encoding="utf-8"))["scenarios"]
+        probe_entry = next(
+            item for item in scenario_entries if item["scenario_id"] == "npz_path_complexity_benefit_probe"
+        )
+        self.assertEqual(probe_entry["scenario_group"], "stress")
+        self.assertEqual(probe_entry["risk_region"], [8, 20, 4, 14])
+        self.assertGreaterEqual(len(probe_entry["blocked_rects"]), 4)
+        with np.load(Path(probe_entry["map_source"]["path"]), allow_pickle=False) as grid:
+            high_risk_band = grid["confidence"][4:14, 8:20]
+            upper_corridor = grid["confidence"][1:4, 8:20]
+            lower_corridor = grid["confidence"][15:18, 8:20]
+            self.assertLess(float(np.max(high_risk_band)), 0.35)
+            self.assertGreater(float(np.mean(upper_corridor)), float(np.mean(high_risk_band)))
+            self.assertGreater(float(np.mean(lower_corridor)), float(np.mean(high_risk_band)))
 
     def test_mixed_stress_export_has_reachable_and_blocked_candidates(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
