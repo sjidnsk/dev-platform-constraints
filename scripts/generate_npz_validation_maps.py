@@ -29,6 +29,7 @@ class ValidationMapSpec:
     risk_region: tuple[int, int, int, int] | None = None
     blocked_rects: tuple[tuple[int, int, int, int], ...] = tuple()
     scenario_group: str = "smoke"
+    contrast_focus: str | None = None
 
     @property
     def filename(self) -> str:
@@ -183,6 +184,63 @@ STRESS_VALIDATION_SPECS = (
         ),
         scenario_group="mixed_stress",
     ),
+    ValidationMapSpec(
+        scenario_id="npz_low_centerline_bad_channel",
+        width=20,
+        height=16,
+        resolution=0.5,
+        seed=506,
+        observations=({"observer_cell": [0, 8], "heading_deg": 0.0},),
+        start_cell=(0, 0),
+        goal_cell=(19, 15),
+        low_confidence_band=(6, 11),
+        value_region=(14, 20, 10, 16),
+        risk_region=(6, 11, 0, 16),
+        scenario_group="channel_contrast",
+        contrast_focus="low_centerline_cost_bad_channel_quality",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_blocked_nearby_clearance_detour",
+        width=24,
+        height=16,
+        resolution=0.5,
+        seed=507,
+        observations=(
+            {"observer_cell": [0, 5], "heading_deg": 0.0},
+            {"observer_cell": [0, 12], "heading_deg": 0.0},
+        ),
+        start_cell=(0, 2),
+        goal_cell=(23, 14),
+        low_confidence_band=(7, 16),
+        value_region=(17, 24, 10, 16),
+        risk_region=(7, 15, 4, 12),
+        blocked_rects=(
+            (4, 8, 3, 8),
+        ),
+        scenario_group="channel_contrast",
+        contrast_focus="blocked_nearby_clearance",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_high_cost_exposure_rock_detour",
+        width=24,
+        height=16,
+        resolution=0.5,
+        seed=508,
+        observations=(
+            {"observer_cell": [0, 5], "heading_deg": 0.0},
+            {"observer_cell": [0, 12], "heading_deg": 0.0},
+        ),
+        start_cell=(0, 1),
+        goal_cell=(23, 14),
+        low_confidence_band=(6, 15),
+        value_region=(17, 24, 9, 16),
+        risk_region=(6, 15, 3, 12),
+        blocked_rects=(
+            (4, 8, 3, 9),
+        ),
+        scenario_group="channel_contrast",
+        contrast_focus="high_cost_exposure_rock_field_detour",
+    ),
 )
 
 SCENARIO_SETS = {
@@ -271,6 +329,8 @@ def _scenario_entry(spec: ValidationMapSpec, map_path: Path) -> dict[str, object
         scenario["risk_region"] = list(spec.risk_region)
     if spec.blocked_rects:
         scenario["blocked_rects"] = [list(rect) for rect in spec.blocked_rects]
+    if spec.contrast_focus is not None:
+        scenario["contrast_focus"] = spec.contrast_focus
     return scenario
 
 

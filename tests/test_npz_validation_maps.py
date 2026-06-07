@@ -94,16 +94,43 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         scenario_ids = {item["scenario_id"] for item in summary["scenarios"]}
         self.assertIn("npz_mixed_stress_detour", scenario_ids)
         self.assertIn("npz_path_complexity_benefit_probe", scenario_ids)
+        self.assertIn("npz_low_centerline_bad_channel", scenario_ids)
+        self.assertIn("npz_blocked_nearby_clearance_detour", scenario_ids)
+        self.assertIn("npz_high_cost_exposure_rock_detour", scenario_ids)
         scenarios = load_ablation_scenarios(scenario_config)
-        self.assertEqual(len(scenarios), 5)
+        self.assertEqual(len(scenarios), 8)
         for scenario in scenarios:
             with np.load(Path(scenario.map_source.path), allow_pickle=False) as grid:
                 self.assertEqual(grid["obstacle"].shape, (scenario.height, scenario.width))
-                self.assertGreater(np.count_nonzero(grid["obstacle"] >= 0.5), 0)
+                if scenario.scenario_id != "npz_low_centerline_bad_channel":
+                    self.assertGreater(np.count_nonzero(grid["obstacle"] >= 0.5), 0)
                 self.assertLess(float(np.min(grid["confidence"])), 0.5)
                 self.assertTrue(np.any(grid["value"] > 0.0))
 
         scenario_entries = json.loads(scenario_config.read_text(encoding="utf-8"))["scenarios"]
+        contrast_entries = {
+            item["scenario_id"]: item for item in scenario_entries if item.get("scenario_group") == "channel_contrast"
+        }
+        self.assertEqual(
+            {
+                "npz_low_centerline_bad_channel",
+                "npz_blocked_nearby_clearance_detour",
+                "npz_high_cost_exposure_rock_detour",
+            },
+            set(contrast_entries),
+        )
+        self.assertEqual(
+            contrast_entries["npz_low_centerline_bad_channel"]["contrast_focus"],
+            "low_centerline_cost_bad_channel_quality",
+        )
+        self.assertEqual(
+            contrast_entries["npz_blocked_nearby_clearance_detour"]["contrast_focus"],
+            "blocked_nearby_clearance",
+        )
+        self.assertEqual(
+            contrast_entries["npz_high_cost_exposure_rock_detour"]["contrast_focus"],
+            "high_cost_exposure_rock_field_detour",
+        )
         probe_entry = next(
             item for item in scenario_entries if item["scenario_id"] == "npz_path_complexity_benefit_probe"
         )
