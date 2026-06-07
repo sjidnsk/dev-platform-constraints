@@ -131,6 +131,7 @@ def main() -> None:
                 "seed": scenario.map_source.seed,
             },
             platform="yutu2",
+            platform_parameters=platform,
         )
         sidecar["metadata"]["scenario_group"] = scenario.scenario_group
         (output_dir / f"{scenario.scenario_id}.contract.json").write_text(

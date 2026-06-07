@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+from math import ceil, hypot
 from typing import Any
 
 import numpy as np
@@ -92,6 +93,103 @@ def _observation_update_payload(confidence_report: Any) -> dict[str, object]:
         name: value
         for name in dir(confidence_report)
         if not name.startswith("_") and not callable(value := getattr(confidence_report, name))
+    }
+
+
+def _platform_parameter_float(platform_parameters: Any | None, key: str) -> float | None:
+    if platform_parameters is None:
+        return None
+    parameters = getattr(platform_parameters, "parameters", {})
+    parameter = parameters.get(key) if isinstance(parameters, dict) else None
+    if parameter is None:
+        return None
+    value = getattr(parameter, "value", parameter)
+    if isinstance(value, dict):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _platform_footprint_radius_m(
+    platform_parameters: Any | None,
+    *,
+    safety_margin_m: float = 0.0,
+) -> float | None:
+    body_length_m = _platform_parameter_float(platform_parameters, "body_length")
+    body_width_m = _platform_parameter_float(platform_parameters, "body_width")
+    if body_length_m is None or body_width_m is None:
+        return None
+    return float(hypot(body_length_m, body_width_m) / 2.0 + safety_margin_m)
+
+
+def _inflated_passable_mask(
+    passable_mask: np.ndarray,
+    *,
+    resolution: float,
+    footprint_radius_m: float | None,
+) -> np.ndarray:
+    safe_mask = np.array(passable_mask, dtype=bool, copy=True)
+    if footprint_radius_m is None or footprint_radius_m <= 0.0:
+        return safe_mask
+
+    radius_cells = int(ceil(footprint_radius_m / max(resolution, 1.0e-12)))
+    height, width = safe_mask.shape
+    for blocked_y, blocked_x in np.argwhere(~passable_mask):
+        min_y = max(0, int(blocked_y) - radius_cells)
+        max_y = min(height - 1, int(blocked_y) + radius_cells)
+        min_x = max(0, int(blocked_x) - radius_cells)
+        max_x = min(width - 1, int(blocked_x) + radius_cells)
+        for y in range(min_y, max_y + 1):
+            for x in range(min_x, max_x + 1):
+                distance_m = hypot((x - int(blocked_x)) * resolution, (y - int(blocked_y)) * resolution)
+                if distance_m <= footprint_radius_m:
+                    safe_mask[y, x] = False
+    return safe_mask
+
+
+def _platform_goal_admissibility_payload(
+    passable_mask: np.ndarray,
+    *,
+    resolution: float,
+    platform_parameters: Any | None,
+    safety_margin_m: float,
+) -> dict[str, Any]:
+    if safety_margin_m < 0.0:
+        raise ValueError("safety_margin_m must be nonnegative")
+
+    footprint_radius_m = _platform_footprint_radius_m(
+        platform_parameters,
+        safety_margin_m=safety_margin_m,
+    )
+    inflated_mask = _inflated_passable_mask(
+        passable_mask,
+        resolution=resolution,
+        footprint_radius_m=footprint_radius_m,
+    )
+    uses_platform_footprint = footprint_radius_m is not None and footprint_radius_m > 0.0
+    return {
+        "schema_version": "platform-goal-admissibility/v1",
+        "passable_source": "inflated_passable_mask" if uses_platform_footprint else "original_passable_mask",
+        "resolution": float(resolution),
+        "safety_margin_m": float(safety_margin_m),
+        "footprint_radius_m": footprint_radius_m,
+        "original_blocked_count": int(np.count_nonzero(~passable_mask)),
+        "inflated_blocked_count": int(np.count_nonzero(~inflated_mask)),
+        "inflated_passable_mask": inflated_mask.tolist(),
+        "cell_roles": {
+            "policy_target_cell": "model_explorer_contract_top_goal",
+            "execution_goal_cell": "same_cell_when_inflated_passable",
+            "nearest_inflated_passable_anchor": (
+                "audit_projection_candidate_when_policy_target_is_not_inflated_passable"
+            ),
+        },
+        "training_use": {
+            "same_cell_inflated_passable_goal": "eligible_if_route_contract_passes",
+            "platform_inflated_goal_blocked": "not_positive_evidence",
+            "audit_proxy_anchor_not_same_cell": "not_positive_evidence",
+        },
     }
 
 
@@ -189,6 +287,8 @@ def build_path_planner_sidecar(
     scenario_id: str,
     map_source: dict[str, Any] | None = None,
     platform: str | None = None,
+    platform_parameters: Any | None = None,
+    safety_margin_m: float = 0.0,
     include_terrain_layers: bool = True,
 ) -> dict[str, Any]:
     """构建 path-planner-request/v1 可直接消费的地图 sidecar。
@@ -222,6 +322,12 @@ def build_path_planner_sidecar(
             "platform": platform,
             "blocked_count": int(np.count_nonzero(~passable_mask)),
             "passable_ratio": float(np.mean(passable_mask)) if passable_mask.size else 0.0,
+            "platform_goal_admissibility": _platform_goal_admissibility_payload(
+                passable_mask,
+                resolution=grid.resolution,
+                platform_parameters=platform_parameters,
+                safety_margin_m=safety_margin_m,
+            ),
         },
     }
     if include_terrain_layers:

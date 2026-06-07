@@ -4,9 +4,10 @@ from pathlib import Path
 
 import numpy as np
 
+from dev_platform_constraints.core import GridMap, metadata_for_generated_layer
 from dev_platform_constraints.exploration import evaluate_goal_sequences, generate_exploration_candidates, rank_exploration_goals
-from dev_platform_constraints.mapping import generate_costmap, generate_hard_constraints
-from dev_platform_constraints.platforms import PlatformParameters
+from dev_platform_constraints.mapping import ConstraintResult, generate_costmap, generate_hard_constraints
+from dev_platform_constraints.platforms import ParameterValue, PlatformParameters
 from dev_platform_constraints.reporting import (
     MODEL_EXPLORER_SCHEMA_VERSION,
     MODEL_EXPLORER_STABLE_FIELDS,
@@ -87,6 +88,62 @@ class ModelExplorerContractTests(unittest.TestCase):
         self.assertTrue(np.all(cost >= 0.0))
         self.assertTrue(np.array_equal(passable_mask, constraints.passable_mask))
         self.assertTrue(np.all(~passable_mask[constraints.reason_layer != 0]))
+
+    def test_path_planner_sidecar_metadata_exposes_platform_goal_admissibility(self) -> None:
+        grid = GridMap(resolution=1.0, origin=(0.0, 0.0), width=5, height=5, frame_id="moon_local")
+        grid.add_layer(
+            "cost",
+            np.ones((5, 5), dtype=float),
+            metadata_for_generated_layer("cost", resolution=1.0, frame_id="moon_local"),
+        )
+        passable_mask = np.ones((5, 5), dtype=bool)
+        passable_mask[2, 2] = False
+        reason_layer = np.zeros((5, 5), dtype=np.uint16)
+        reason_layer[2, 2] = 4
+        constraints = ConstraintResult(
+            passable_mask=passable_mask,
+            reason_layer=reason_layer,
+            reason_names={4: "obstacle"},
+        )
+        platform = PlatformParameters(
+            name="footprint-test-rover",
+            parameters={
+                "max_slope_deg": ParameterValue(20.0, "deg", "assumed", "unit test"),
+                "max_obstacle_height": ParameterValue(0.2, "m", "assumed", "unit test"),
+                "ground_clearance": ParameterValue(0.18, "m", "assumed", "unit test"),
+                "min_turning_radius": ParameterValue(0.0, "m", "assumed", "unit test"),
+                "sensor_range": ParameterValue(5.0, "m", "assumed", "unit test"),
+                "sensor_fov": ParameterValue(60.0, "deg", "assumed", "unit test"),
+                "energy_model": ParameterValue({"base_cost": 1.0}, "relative", "assumed", "unit test"),
+                "body_length": ParameterValue(2.0, "m", "estimated", "unit test"),
+                "body_width": ParameterValue(2.0, "m", "estimated", "unit test"),
+            },
+        )
+
+        sidecar = build_path_planner_sidecar(
+            grid,
+            constraints,
+            scenario_id="unit-platform-goal-admissibility",
+            platform="footprint-test-rover",
+            platform_parameters=platform,
+            include_terrain_layers=False,
+        )
+
+        admissibility = sidecar["metadata"]["platform_goal_admissibility"]
+        self.assertEqual(admissibility["schema_version"], "platform-goal-admissibility/v1")
+        self.assertEqual(admissibility["passable_source"], "inflated_passable_mask")
+        self.assertGreater(admissibility["footprint_radius_m"], 1.0)
+        self.assertEqual(admissibility["original_blocked_count"], 1)
+        self.assertGreater(admissibility["inflated_blocked_count"], admissibility["original_blocked_count"])
+        self.assertFalse(admissibility["inflated_passable_mask"][2][3])
+        self.assertTrue(admissibility["inflated_passable_mask"][0][0])
+        self.assertEqual(admissibility["cell_roles"]["policy_target_cell"], "model_explorer_contract_top_goal")
+        self.assertEqual(admissibility["cell_roles"]["execution_goal_cell"], "same_cell_when_inflated_passable")
+        self.assertEqual(
+            admissibility["cell_roles"]["nearest_inflated_passable_anchor"],
+            "audit_projection_candidate_when_policy_target_is_not_inflated_passable",
+        )
+        self.assertEqual(admissibility["training_use"]["audit_proxy_anchor_not_same_cell"], "not_positive_evidence")
 
     def test_documented_contract_example_matches_stable_sections(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
