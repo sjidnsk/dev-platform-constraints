@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -344,10 +344,39 @@ HOLDOUT_VALIDATION_SPECS = (
     ),
 )
 
+
+def _raw_alignment_specs(split: str, seed_offset: int) -> tuple[ValidationMapSpec, ...]:
+    specs: list[ValidationMapSpec] = []
+    for spec in HOLDOUT_VALIDATION_SPECS:
+        base_id = spec.scenario_id.removeprefix("npz_holdout_")
+        specs.append(
+            replace(
+                spec,
+                scenario_id=f"npz_raw_align_{split}_{base_id}",
+                seed=spec.seed + seed_offset,
+                scenario_group=f"raw_align_{split}_{base_id}",
+                contrast_focus=(
+                    f"raw_align_{split}_{spec.contrast_focus}"
+                    if spec.contrast_focus is not None
+                    else None
+                ),
+            )
+        )
+    return tuple(specs)
+
+
+RAW_ALIGN_TRAIN_VALIDATION_SPECS = _raw_alignment_specs("train", 1100)
+RAW_ALIGN_VAL_VALIDATION_SPECS = _raw_alignment_specs("val", 2100)
+RAW_ALIGN_TEST_VALIDATION_SPECS = _raw_alignment_specs("test", 3100)
+
+
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
     "stress": STRESS_VALIDATION_SPECS,
     "holdout": HOLDOUT_VALIDATION_SPECS,
+    "raw_align_train": RAW_ALIGN_TRAIN_VALIDATION_SPECS,
+    "raw_align_val": RAW_ALIGN_VAL_VALIDATION_SPECS,
+    "raw_align_test": RAW_ALIGN_TEST_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -462,7 +491,7 @@ def parse_args() -> argparse.Namespace:
         "--scenario-set",
         choices=tuple(SCENARIO_SETS),
         default="smoke",
-        help="选择要生成的验证场景集：smoke、stress、holdout 或 all。",
+        help="选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、raw_align_val、raw_align_test 或 all。",
     )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
     return parser.parse_args()
