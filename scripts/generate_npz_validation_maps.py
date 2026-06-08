@@ -370,6 +370,35 @@ RAW_ALIGN_VAL_VALIDATION_SPECS = _raw_alignment_specs("val", 2100)
 RAW_ALIGN_TEST_VALIDATION_SPECS = _raw_alignment_specs("test", 3100)
 
 
+POLICY_CANARY_VALIDATION_SPECS = (
+    ValidationMapSpec(
+        scenario_id="npz_mixed_stress_detour",
+        width=26,
+        height=14,
+        resolution=0.5,
+        seed=504,
+        observations=(
+            {"observer_cell": [1, 6], "heading_deg": 0.0},
+            {"observer_cell": [7, 3], "heading_deg": 12.0},
+        ),
+        start_cell=(1, 6),
+        goal_cell=(25, 10),
+        low_confidence_band=(3, 14),
+        value_region=(3, 25, 3, 12),
+        risk_region=(10, 18, 4, 11),
+        blocked_rects=(
+            (11, 13, 2, 8),
+            (11, 13, 10, 14),
+            (18, 20, 0, 5),
+            (18, 20, 7, 14),
+            (22, 24, 4, 10),
+        ),
+        scenario_group="mixed_stress",
+        contrast_focus="safe_alternative_policy_choice",
+    ),
+)
+
+
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
     "stress": STRESS_VALIDATION_SPECS,
@@ -377,6 +406,7 @@ SCENARIO_SETS = {
     "raw_align_train": RAW_ALIGN_TRAIN_VALIDATION_SPECS,
     "raw_align_val": RAW_ALIGN_VAL_VALIDATION_SPECS,
     "raw_align_test": RAW_ALIGN_TEST_VALIDATION_SPECS,
+    "policy_canary": POLICY_CANARY_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -491,7 +521,10 @@ def parse_args() -> argparse.Namespace:
         "--scenario-set",
         choices=tuple(SCENARIO_SETS),
         default="smoke",
-        help="选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、raw_align_val、raw_align_test 或 all。",
+        help=(
+            "选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、"
+            "raw_align_val、raw_align_test、policy_canary 或 all。"
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
     return parser.parse_args()
