@@ -243,9 +243,111 @@ STRESS_VALIDATION_SPECS = (
     ),
 )
 
+HOLDOUT_VALIDATION_SPECS = (
+    ValidationMapSpec(
+        scenario_id="npz_holdout_near_blocked_corridor",
+        width=21,
+        height=13,
+        resolution=0.5,
+        seed=8601,
+        observations=({"observer_cell": [0, 6], "heading_deg": 2.0},),
+        start_cell=(1, 6),
+        goal_cell=(20, 9),
+        low_confidence_band=(8, 12),
+        value_region=(16, 21, 5, 11),
+        risk_region=(8, 12, 1, 12),
+        blocked_rects=((10, 11, 0, 6), (10, 11, 8, 13)),
+        scenario_group="holdout_near_blocked",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_holdout_high_risk_value_trap",
+        width=23,
+        height=15,
+        resolution=0.5,
+        seed=8602,
+        observations=({"observer_cell": [0, 4], "heading_deg": 6.0},),
+        start_cell=(1, 4),
+        goal_cell=(22, 13),
+        low_confidence_band=(9, 14),
+        value_region=(17, 23, 9, 15),
+        risk_region=(9, 17, 5, 13),
+        blocked_rects=((11, 13, 4, 10), (14, 16, 8, 13)),
+        scenario_group="holdout_high_risk",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_holdout_dense_rock_choke",
+        width=25,
+        height=17,
+        resolution=0.5,
+        seed=8603,
+        observations=(
+            {"observer_cell": [0, 6], "heading_deg": 0.0},
+            {"observer_cell": [0, 12], "heading_deg": 0.0},
+        ),
+        start_cell=(1, 9),
+        goal_cell=(24, 11),
+        low_confidence_band=(10, 15),
+        value_region=(19, 25, 6, 15),
+        risk_region=(10, 16, 4, 14),
+        blocked_rects=(
+            (8, 9, 0, 8),
+            (8, 9, 10, 17),
+            (13, 14, 2, 11),
+            (13, 14, 13, 17),
+            (17, 18, 0, 6),
+            (17, 18, 8, 17),
+        ),
+        scenario_group="holdout_dense_choke",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_holdout_path_complexity_probe",
+        width=29,
+        height=19,
+        resolution=0.5,
+        seed=8604,
+        observations=(
+            {"observer_cell": [1, 10], "heading_deg": 0.0},
+            {"observer_cell": [7, 3], "heading_deg": 8.0},
+        ),
+        start_cell=(1, 10),
+        goal_cell=(28, 10),
+        low_confidence_band=(9, 21),
+        value_region=(23, 29, 7, 14),
+        risk_region=(9, 21, 5, 15),
+        blocked_rects=(
+            (12, 13, 5, 11),
+            (12, 13, 13, 15),
+            (16, 17, 5, 9),
+            (16, 17, 11, 15),
+            (20, 21, 7, 13),
+        ),
+        scenario_group="holdout_path_complexity",
+    ),
+    ValidationMapSpec(
+        scenario_id="npz_holdout_channel_contrast_detour",
+        width=25,
+        height=17,
+        resolution=0.5,
+        seed=8605,
+        observations=(
+            {"observer_cell": [0, 5], "heading_deg": 0.0},
+            {"observer_cell": [0, 13], "heading_deg": 0.0},
+        ),
+        start_cell=(0, 2),
+        goal_cell=(24, 15),
+        low_confidence_band=(7, 16),
+        value_region=(18, 25, 11, 17),
+        risk_region=(7, 16, 4, 13),
+        blocked_rects=((5, 9, 3, 9),),
+        scenario_group="holdout_channel_contrast",
+        contrast_focus="holdout_blocked_nearby_clearance",
+    ),
+)
+
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
     "stress": STRESS_VALIDATION_SPECS,
+    "holdout": HOLDOUT_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -312,6 +414,8 @@ def _validation_layers(spec: ValidationMapSpec) -> dict[str, np.ndarray | float 
 def _scenario_entry(spec: ValidationMapSpec, map_path: Path) -> dict[str, object]:
     scenario: dict[str, object] = {
         "scenario_id": spec.scenario_id,
+        "seed": spec.seed,
+        "scenario_variant_id": f"{spec.scenario_id}-seed-{spec.seed}",
         "width": spec.width,
         "height": spec.height,
         "resolution": spec.resolution,
@@ -358,7 +462,7 @@ def parse_args() -> argparse.Namespace:
         "--scenario-set",
         choices=tuple(SCENARIO_SETS),
         default="smoke",
-        help="选择要生成的验证场景集：smoke、stress 或 all。",
+        help="选择要生成的验证场景集：smoke、stress、holdout 或 all。",
     )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
     return parser.parse_args()
@@ -380,6 +484,7 @@ def main() -> None:
                 "width": spec.width,
                 "height": spec.height,
                 "seed": spec.seed,
+                "scenario_variant_id": f"{spec.scenario_id}-seed-{spec.seed}",
                 "scenario_group": spec.scenario_group,
             }
             for spec in specs
