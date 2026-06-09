@@ -466,6 +466,29 @@ POLICY_CANARY_OPPORTUNITY_QUALITY_VALIDATION_SPECS = tuple(
     for variant_index, variant in enumerate(("a", "b"))
 )
 
+_DENSE_CHOKE_SAFE_BYPASS_BLOCKS = (
+    (11, 13, 2, 8),
+    (11, 13, 10, 14),
+    (18, 20, 0, 5),
+    (18, 20, 7, 14),
+    (22, 24, 4, 10),
+)
+
+POLICY_CANARY_DENSE_CHOKE_OPPORTUNITY_VALIDATION_SPECS = tuple(
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id=f"npz_canary_dense_choke_safe_bypass_{variant}",
+        seed=9704 + index,
+        scenario_group="dense_choke_safe_bypass",
+        contrast_focus="dense_choke_safe_bypass",
+        blocked_rects=_DENSE_CHOKE_SAFE_BYPASS_BLOCKS,
+        risk_region=(10, 18, 4, 11),
+        value_region=(4, 25, 3, 12),
+        low_confidence_band=(3, 14),
+    )
+    for index, variant in enumerate(("a", "b", "c", "d"))
+)
+
 
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
@@ -477,6 +500,7 @@ SCENARIO_SETS = {
     "policy_canary": POLICY_CANARY_VALIDATION_SPECS,
     "policy_canary_diversity": POLICY_CANARY_DIVERSITY_VALIDATION_SPECS,
     "policy_canary_opportunity_quality": POLICY_CANARY_OPPORTUNITY_QUALITY_VALIDATION_SPECS,
+    "policy_canary_dense_choke_opportunity": POLICY_CANARY_DENSE_CHOKE_OPPORTUNITY_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -594,7 +618,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、"
             "raw_align_val、raw_align_test、policy_canary、policy_canary_diversity、"
-            "policy_canary_opportunity_quality 或 all。"
+            "policy_canary_opportunity_quality、policy_canary_dense_choke_opportunity 或 all。"
         ),
     )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
