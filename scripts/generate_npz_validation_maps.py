@@ -653,6 +653,57 @@ POLICY_CANARY_VALUE_STABILITY_VALIDATION_SPECS = tuple(
     )
 )
 
+_POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_FAMILIES = (
+    ("mixed_stress_detour", "safe_alternative_policy_choice", 9900, (0, 0), ("c", "e", "b", "f", "d", "a")),
+    ("near_blocked_safe_alt", "near_blocked_safe_alternative", 9910, (1, 0), ("f", "c", "b", "e", "d", "a")),
+    ("high_risk_tradeoff", "high_risk_safe_tradeoff", 9920, (0, 1), ("base", "c", "e", "b", "f", "d")),
+    ("dense_choke_safe_bypass", "dense_choke_safe_bypass", 9930, (-1, 0), ("c", "e", "b", "f", "d", "a")),
+    ("channel_contrast", "channel_quality_safe_alternative", 9940, (1, 1), ("d", "c", "f", "e", "b", "a")),
+    ("path_complexity_benefit", "path_complexity_safe_benefit", 9950, (-1, 1), ("a", "d", "f", "c", "e", "b")),
+)
+
+
+POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_VALIDATION_SPECS = tuple(
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id=(
+            f"npz_canary_sequential_multi_step_opportunity_{family}_{label_suffix}"
+        ),
+        seed=seed_base + variant_index,
+        scenario_group=family,
+        contrast_focus=contrast_focus,
+        low_confidence_band=_shift_interval(
+            variant["low_confidence_band"],
+            offset[0] + (variant_index % 3) - 1,
+            lower=0,
+            upper=26,
+        ),
+        value_region=_shift_region(
+            variant["value_region"],
+            offset[0] + (variant_index % 3) - 1,
+            offset[1] + (variant_index % 2),
+        ),
+        risk_region=_shift_region(
+            variant["risk_region"],
+            offset[0],
+            offset[1] + ((variant_index + 1) % 2),
+        ),
+        blocked_rects=_shift_rects(
+            variant["blocked_rects"],
+            offset[0] + (variant_index % 2),
+            offset[1],
+        ),
+    )
+    for family, contrast_focus, seed_base, offset, template_suffixes in _POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_FAMILIES
+    for variant_index, template_suffix in enumerate(template_suffixes)
+    for label_suffix, variant in (
+        (
+            chr(ord("a") + variant_index),
+            _POLICY_CANARY_VALUE_STABILITY_VARIANTS_BY_SUFFIX[template_suffix],
+        ),
+    )
+)
+
 
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
@@ -666,6 +717,7 @@ SCENARIO_SETS = {
     "policy_canary_opportunity_quality": POLICY_CANARY_OPPORTUNITY_QUALITY_VALIDATION_SPECS,
     "policy_canary_dense_choke_opportunity": POLICY_CANARY_DENSE_CHOKE_OPPORTUNITY_VALIDATION_SPECS,
     "policy_canary_value_stability": POLICY_CANARY_VALUE_STABILITY_VALIDATION_SPECS,
+    "policy_canary_sequential_multi_step_opportunity": POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -863,7 +915,7 @@ def parse_args() -> argparse.Namespace:
             "选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、"
             "raw_align_val、raw_align_test、policy_canary、policy_canary_diversity、"
             "policy_canary_opportunity_quality、policy_canary_dense_choke_opportunity、"
-            "policy_canary_value_stability 或 all。"
+            "policy_canary_value_stability、policy_canary_sequential_multi_step_opportunity 或 all。"
         ),
     )
     parser.add_argument(

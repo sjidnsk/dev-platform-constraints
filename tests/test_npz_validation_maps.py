@@ -256,6 +256,67 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         self.assertEqual(len(variants), 36)
         self.assertGreaterEqual(len(geometry_signatures), 12)
 
+    def test_policy_canary_sequential_multi_step_opportunity_covers_six_families_with_unique_variants(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        root = Path(tempfile.mkdtemp(prefix="npz-seq-multi-step-"))
+        scenario_config = root / "npz_validation_scenarios.json"
+
+        generated = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "generate_npz_validation_maps.py"),
+                "--scenario-set",
+                "policy_canary_sequential_multi_step_opportunity",
+                "--output-dir",
+                str(root / "maps"),
+                "--scenario-config",
+                str(scenario_config),
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
+        scenarios = json.loads(scenario_config.read_text(encoding="utf-8"))["scenarios"]
+        self.assertEqual(len(scenarios), 36)
+        families = {}
+        scenario_ids = set()
+        seeds = set()
+        variants = set()
+        geometry_signatures = set()
+        for scenario in scenarios:
+            self.assertTrue(
+                scenario["scenario_id"].startswith("npz_canary_sequential_multi_step_opportunity_")
+            )
+            families[scenario["scenario_group"]] = families.get(scenario["scenario_group"], 0) + 1
+            scenario_ids.add(scenario["scenario_id"])
+            seeds.add(scenario["seed"])
+            variants.add(scenario["scenario_variant_id"])
+            geometry_signatures.add(
+                (
+                    tuple(scenario.get("risk_region", [])),
+                    tuple(scenario.get("value_region", [])),
+                    tuple(tuple(rect) for rect in scenario.get("blocked_rects", [])),
+                )
+            )
+        self.assertEqual(
+            families,
+            {
+                "mixed_stress_detour": 6,
+                "near_blocked_safe_alt": 6,
+                "high_risk_tradeoff": 6,
+                "dense_choke_safe_bypass": 6,
+                "channel_contrast": 6,
+                "path_complexity_benefit": 6,
+            },
+        )
+        self.assertEqual(len(scenario_ids), 36)
+        self.assertEqual(len(seeds), 36)
+        self.assertEqual(len(variants), 36)
+        self.assertGreaterEqual(len(geometry_signatures), 12)
+
     def test_explicit_scenario_spec_overrides_start_cell_and_identity(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         root = Path(tempfile.mkdtemp(prefix="npz-explicit-spec-"))
