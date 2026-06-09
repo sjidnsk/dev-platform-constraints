@@ -30,6 +30,7 @@ class ValidationMapSpec:
     blocked_rects: tuple[tuple[int, int, int, int], ...] = tuple()
     scenario_group: str = "smoke"
     contrast_focus: str | None = None
+    scenario_variant_id: str | None = None
 
     @property
     def filename(self) -> str:
@@ -732,7 +733,7 @@ def _scenario_entry(spec: ValidationMapSpec, map_path: Path) -> dict[str, object
     scenario: dict[str, object] = {
         "scenario_id": spec.scenario_id,
         "seed": spec.seed,
-        "scenario_variant_id": f"{spec.scenario_id}-seed-{spec.seed}",
+        "scenario_variant_id": spec.scenario_variant_id or f"{spec.scenario_id}-seed-{spec.seed}",
         "width": spec.width,
         "height": spec.height,
         "resolution": spec.resolution,
@@ -762,8 +763,87 @@ def _specs_for_set(scenario_set: str) -> tuple[ValidationMapSpec, ...]:
         raise ValueError(f"unknown scenario set: {scenario_set}") from exc
 
 
-def build_scenario_config(output_dir: Path, scenario_set: str = "smoke") -> dict[str, object]:
-    specs = _specs_for_set(scenario_set)
+def _template_specs_for_explicit_payload(payload: dict[str, object]) -> tuple[ValidationMapSpec, ...]:
+    scenario_set = payload.get("scenario_set")
+    if isinstance(scenario_set, str) and scenario_set in SCENARIO_SETS:
+        return _specs_for_set(scenario_set)
+    specs: list[ValidationMapSpec] = []
+    for value in SCENARIO_SETS.values():
+        specs.extend(value)
+    return tuple(specs)
+
+
+def _cell(value: object, *, field: str) -> tuple[int, int]:
+    if not isinstance(value, list | tuple) or len(value) != 2:
+        raise ValueError(f"{field} must be a two-item cell")
+    try:
+        return (int(value[0]), int(value[1]))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must contain integer coordinates") from exc
+
+
+def _load_explicit_scenario_specs(path: Path) -> tuple[ValidationMapSpec, ...]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"scenario spec JSON is invalid: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("scenario spec root must be an object")
+    if payload.get("schema_version") != "npz-validation-explicit-scenario-spec/v1":
+        raise ValueError("scenario spec schema_version must be npz-validation-explicit-scenario-spec/v1")
+    raw_scenarios = payload.get("scenarios")
+    if not isinstance(raw_scenarios, list) or not raw_scenarios:
+        raise ValueError("scenario spec scenarios must be a non-empty array")
+    templates = {spec.scenario_id: spec for spec in _template_specs_for_explicit_payload(payload)}
+    explicit_specs: list[ValidationMapSpec] = []
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(raw_scenarios):
+        if not isinstance(raw, dict):
+            raise ValueError(f"scenarios[{index}] must be an object")
+        template_id = raw.get("template_scenario_id")
+        if not isinstance(template_id, str) or not template_id:
+            raise ValueError(f"scenarios[{index}].template_scenario_id must be a non-empty string")
+        template = templates.get(template_id)
+        if template is None:
+            raise ValueError(f"scenarios[{index}] references unknown template_scenario_id: {template_id}")
+        scenario_id = raw.get("scenario_id")
+        if not isinstance(scenario_id, str) or not scenario_id:
+            raise ValueError(f"scenarios[{index}].scenario_id must be a non-empty string")
+        if scenario_id in seen_ids:
+            raise ValueError(f"scenario_id must be unique: {scenario_id}")
+        seen_ids.add(scenario_id)
+        seed_value = raw.get("scenario_seed", raw.get("seed"))
+        try:
+            seed = int(seed_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"scenarios[{index}].scenario_seed must be an integer") from exc
+        scenario_group = raw.get("scenario_group", template.scenario_group)
+        if not isinstance(scenario_group, str) or not scenario_group:
+            raise ValueError(f"scenarios[{index}].scenario_group must be a non-empty string")
+        scenario_variant_id = raw.get("scenario_variant_id")
+        if scenario_variant_id is not None and (
+            not isinstance(scenario_variant_id, str) or not scenario_variant_id
+        ):
+            raise ValueError(f"scenarios[{index}].scenario_variant_id must be a non-empty string")
+        explicit_specs.append(
+            replace(
+                template,
+                scenario_id=scenario_id,
+                seed=seed,
+                scenario_group=scenario_group,
+                scenario_variant_id=scenario_variant_id,
+                start_cell=_cell(raw.get("start_cell"), field=f"scenarios[{index}].start_cell"),
+            )
+        )
+    return tuple(explicit_specs)
+
+
+def build_scenario_config(
+    output_dir: Path,
+    scenario_set: str = "smoke",
+    specs: tuple[ValidationMapSpec, ...] | None = None,
+) -> dict[str, object]:
+    specs = specs if specs is not None else _specs_for_set(scenario_set)
     return {
         "terrain_likelihood_config": str(ROOT / "configs" / "confidence" / "terrain_likelihood_default.json"),
         "scenario_set": scenario_set,
@@ -786,6 +866,11 @@ def parse_args() -> argparse.Namespace:
             "policy_canary_value_stability 或 all。"
         ),
     )
+    parser.add_argument(
+        "--scenario-spec-json",
+        default=None,
+        help="Opt-in explicit scenario spec JSON. Copies known scenario geometry but overrides identity and start_cell.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
     return parser.parse_args()
 
@@ -793,12 +878,17 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    specs = _specs_for_set(args.scenario_set)
-    scenario_config = build_scenario_config(output_dir, args.scenario_set)
+    if args.scenario_spec_json:
+        specs = _load_explicit_scenario_specs(Path(args.scenario_spec_json))
+        scenario_set = "explicit"
+    else:
+        specs = _specs_for_set(args.scenario_set)
+        scenario_set = args.scenario_set
+    scenario_config = build_scenario_config(output_dir, scenario_set, specs=specs)
     summary = {
         "output_dir": str(output_dir),
         "scenario_config": str(args.scenario_config) if args.scenario_config else None,
-        "scenario_set": args.scenario_set,
+        "scenario_set": scenario_set,
         "scenarios": [
             {
                 "scenario_id": spec.scenario_id,
@@ -806,7 +896,7 @@ def main() -> None:
                 "width": spec.width,
                 "height": spec.height,
                 "seed": spec.seed,
-                "scenario_variant_id": f"{spec.scenario_id}-seed-{spec.seed}",
+                "scenario_variant_id": spec.scenario_variant_id or f"{spec.scenario_id}-seed-{spec.seed}",
                 "scenario_group": spec.scenario_group,
             }
             for spec in specs

@@ -256,6 +256,60 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         self.assertEqual(len(variants), 36)
         self.assertGreaterEqual(len(geometry_signatures), 12)
 
+    def test_explicit_scenario_spec_overrides_start_cell_and_identity(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        root = Path(tempfile.mkdtemp(prefix="npz-explicit-spec-"))
+        scenario_spec = root / "explicit-scenario-spec.json"
+        scenario_config = root / "npz_validation_scenarios.json"
+        scenario_spec.write_text(
+            json.dumps(
+                {
+                    "schema_version": "npz-validation-explicit-scenario-spec/v1",
+                    "scenario_set": "policy_canary_value_stability",
+                    "scenarios": [
+                        {
+                            "template_scenario_id": "npz_canary_value_stability_mixed_stress_detour_a",
+                            "scenario_id": "npz_seq_canary_mixed_stress_detour_ep00_step01",
+                            "scenario_group": "mixed_stress_detour",
+                            "scenario_seed": 12001,
+                            "scenario_variant_id": "seq-mixed-ep00-step01",
+                            "start_cell": [7, 6],
+                        }
+                    ],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        generated = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "generate_npz_validation_maps.py"),
+                "--scenario-spec-json",
+                str(scenario_spec),
+                "--output-dir",
+                str(root / "maps"),
+                "--scenario-config",
+                str(scenario_config),
+            ],
+            cwd=repo_root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(generated.returncode, 0, generated.stdout + generated.stderr)
+        summary = json.loads(generated.stdout)
+        self.assertEqual(summary["scenario_set"], "explicit")
+        self.assertEqual(summary["scenarios"][0]["scenario_id"], "npz_seq_canary_mixed_stress_detour_ep00_step01")
+        scenario = json.loads(scenario_config.read_text(encoding="utf-8"))["scenarios"][0]
+        self.assertEqual(scenario["start_cell"], [7, 6])
+        self.assertEqual(scenario["scenario_group"], "mixed_stress_detour")
+        self.assertEqual(scenario["seed"], 12001)
+        self.assertEqual(scenario["scenario_variant_id"], "seq-mixed-ep00-step01")
+        self.assertTrue((root / "maps" / "npz_seq_canary_mixed_stress_detour_ep00_step01.npz").is_file())
+
     def test_tracked_npz_validation_scenario_config_points_to_generated_maps(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         scenarios = load_ablation_scenarios(repo_root / "configs" / "ablation" / "npz_validation_scenarios.json")
