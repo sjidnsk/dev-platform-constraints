@@ -490,6 +490,145 @@ POLICY_CANARY_DENSE_CHOKE_OPPORTUNITY_VALIDATION_SPECS = tuple(
 )
 
 
+_POLICY_CANARY_VALUE_STABILITY_FAMILIES = (
+    ("mixed_stress_detour", "safe_alternative_policy_choice", 9800, (0, 0)),
+    ("near_blocked_safe_alt", "near_blocked_safe_alternative", 9810, (1, 0)),
+    ("high_risk_tradeoff", "high_risk_safe_tradeoff", 9820, (0, 1)),
+    ("dense_choke_safe_bypass", "dense_choke_safe_bypass", 9830, (-1, 0)),
+    ("channel_contrast", "channel_quality_safe_alternative", 9840, (1, 1)),
+    ("path_complexity_benefit", "path_complexity_safe_benefit", 9850, (-1, 1)),
+)
+
+_POLICY_CANARY_VALUE_STABILITY_VARIANTS = (
+    {
+        "suffix": "a",
+        "low_confidence_band": (3, 14),
+        "value_region": (3, 25, 3, 12),
+        "risk_region": (10, 18, 4, 11),
+        "blocked_rects": (
+            (11, 13, 2, 8),
+            (11, 13, 10, 14),
+            (18, 20, 0, 5),
+            (18, 20, 7, 14),
+            (22, 24, 4, 10),
+        ),
+    },
+    {
+        "suffix": "b",
+        "low_confidence_band": (4, 15),
+        "value_region": (4, 25, 3, 12),
+        "risk_region": (10, 17, 4, 11),
+        "blocked_rects": (
+            (10, 12, 2, 7),
+            (10, 12, 9, 14),
+            (17, 19, 0, 5),
+            (17, 19, 7, 14),
+            (21, 23, 4, 10),
+        ),
+    },
+    {
+        "suffix": "c",
+        "low_confidence_band": (3, 13),
+        "value_region": (3, 24, 2, 12),
+        "risk_region": (9, 18, 3, 10),
+        "blocked_rects": (
+            (11, 13, 1, 7),
+            (11, 13, 9, 14),
+            (18, 20, 0, 4),
+            (18, 20, 6, 14),
+            (22, 24, 3, 9),
+        ),
+    },
+    {
+        "suffix": "d",
+        "low_confidence_band": (5, 15),
+        "value_region": (5, 25, 4, 13),
+        "risk_region": (11, 19, 4, 12),
+        "blocked_rects": (
+            (12, 14, 2, 8),
+            (12, 14, 10, 14),
+            (19, 21, 1, 6),
+            (19, 21, 8, 14),
+            (22, 24, 5, 11),
+        ),
+    },
+    {
+        "suffix": "e",
+        "low_confidence_band": (3, 15),
+        "value_region": (3, 25, 2, 11),
+        "risk_region": (10, 19, 3, 11),
+        "blocked_rects": (
+            (10, 13, 2, 8),
+            (10, 13, 10, 14),
+            (18, 21, 0, 5),
+            (18, 21, 7, 14),
+            (22, 25, 4, 10),
+        ),
+    },
+    {
+        "suffix": "f",
+        "low_confidence_band": (4, 14),
+        "value_region": (4, 25, 4, 13),
+        "risk_region": (9, 17, 4, 12),
+        "blocked_rects": (
+            (11, 12, 2, 8),
+            (11, 12, 10, 14),
+            (17, 20, 0, 5),
+            (17, 20, 7, 14),
+            (21, 24, 4, 10),
+        ),
+    },
+)
+
+
+def _shift_interval(interval: tuple[int, int], dx: int, *, lower: int, upper: int) -> tuple[int, int]:
+    width = interval[1] - interval[0]
+    start = min(max(interval[0] + dx, lower), upper - width)
+    return (start, start + width)
+
+
+def _shift_region(
+    region: tuple[int, int, int, int],
+    dx: int,
+    dy: int,
+) -> tuple[int, int, int, int]:
+    x0, x1 = _shift_interval((region[0], region[1]), dx, lower=0, upper=26)
+    y0, y1 = _shift_interval((region[2], region[3]), dy, lower=0, upper=14)
+    return (x0, x1, y0, y1)
+
+
+def _shift_rects(
+    rects: tuple[tuple[int, int, int, int], ...],
+    dx: int,
+    dy: int,
+) -> tuple[tuple[int, int, int, int], ...]:
+    return tuple(_shift_region(rect, dx, dy) for rect in rects)
+
+
+POLICY_CANARY_VALUE_STABILITY_VALIDATION_SPECS = tuple(
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id=(
+            f"npz_canary_value_stability_{family}_{variant['suffix']}"
+        ),
+        seed=seed_base + variant_index,
+        scenario_group=family,
+        contrast_focus=contrast_focus,
+        low_confidence_band=_shift_interval(
+            variant["low_confidence_band"],
+            offset[0],
+            lower=0,
+            upper=26,
+        ),
+        value_region=_shift_region(variant["value_region"], offset[0], offset[1]),
+        risk_region=_shift_region(variant["risk_region"], offset[0], offset[1]),
+        blocked_rects=_shift_rects(variant["blocked_rects"], offset[0], offset[1]),
+    )
+    for family, contrast_focus, seed_base, offset in _POLICY_CANARY_VALUE_STABILITY_FAMILIES
+    for variant_index, variant in enumerate(_POLICY_CANARY_VALUE_STABILITY_VARIANTS)
+)
+
+
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
     "stress": STRESS_VALIDATION_SPECS,
@@ -501,6 +640,7 @@ SCENARIO_SETS = {
     "policy_canary_diversity": POLICY_CANARY_DIVERSITY_VALIDATION_SPECS,
     "policy_canary_opportunity_quality": POLICY_CANARY_OPPORTUNITY_QUALITY_VALIDATION_SPECS,
     "policy_canary_dense_choke_opportunity": POLICY_CANARY_DENSE_CHOKE_OPPORTUNITY_VALIDATION_SPECS,
+    "policy_canary_value_stability": POLICY_CANARY_VALUE_STABILITY_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -618,7 +758,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、"
             "raw_align_val、raw_align_test、policy_canary、policy_canary_diversity、"
-            "policy_canary_opportunity_quality、policy_canary_dense_choke_opportunity 或 all。"
+            "policy_canary_opportunity_quality、policy_canary_dense_choke_opportunity、"
+            "policy_canary_value_stability 或 all。"
         ),
     )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
