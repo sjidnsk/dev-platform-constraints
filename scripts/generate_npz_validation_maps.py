@@ -491,15 +491,28 @@ POLICY_CANARY_DENSE_CHOKE_OPPORTUNITY_VALIDATION_SPECS = tuple(
 
 
 _POLICY_CANARY_VALUE_STABILITY_FAMILIES = (
-    ("mixed_stress_detour", "safe_alternative_policy_choice", 9800, (0, 0)),
-    ("near_blocked_safe_alt", "near_blocked_safe_alternative", 9810, (1, 0)),
-    ("high_risk_tradeoff", "high_risk_safe_tradeoff", 9820, (0, 1)),
-    ("dense_choke_safe_bypass", "dense_choke_safe_bypass", 9830, (-1, 0)),
-    ("channel_contrast", "channel_quality_safe_alternative", 9840, (1, 1)),
-    ("path_complexity_benefit", "path_complexity_safe_benefit", 9850, (-1, 1)),
+    ("mixed_stress_detour", "safe_alternative_policy_choice", 9800, (0, 0), ("c", "e", "c", "e", "c", "e")),
+    ("near_blocked_safe_alt", "near_blocked_safe_alternative", 9810, (1, 0), ("f", "c", "f", "e", "f", "c")),
+    ("high_risk_tradeoff", "high_risk_safe_tradeoff", 9820, (0, 0), ("base", "base", "base", "c", "base", "e")),
+    ("dense_choke_safe_bypass", "dense_choke_safe_bypass", 9830, (-1, 0), ("c", "e", "c", "e", "c", "e")),
+    ("channel_contrast", "channel_quality_safe_alternative", 9840, (1, 1), ("d", "c", "d", "c", "d", "c")),
+    ("path_complexity_benefit", "path_complexity_safe_benefit", 9850, (-1, 1), ("a", "d", "a", "d", "a", "d")),
 )
 
 _POLICY_CANARY_VALUE_STABILITY_VARIANTS = (
+    {
+        "suffix": "base",
+        "low_confidence_band": (3, 14),
+        "value_region": (3, 25, 3, 12),
+        "risk_region": (10, 18, 4, 11),
+        "blocked_rects": (
+            (11, 13, 2, 8),
+            (11, 13, 10, 14),
+            (18, 20, 0, 5),
+            (18, 20, 7, 14),
+            (22, 24, 4, 10),
+        ),
+    },
     {
         "suffix": "a",
         "low_confidence_band": (3, 14),
@@ -580,6 +593,11 @@ _POLICY_CANARY_VALUE_STABILITY_VARIANTS = (
     },
 )
 
+_POLICY_CANARY_VALUE_STABILITY_VARIANTS_BY_SUFFIX = {
+    str(variant["suffix"]): variant
+    for variant in _POLICY_CANARY_VALUE_STABILITY_VARIANTS
+}
+
 
 def _shift_interval(interval: tuple[int, int], dx: int, *, lower: int, upper: int) -> tuple[int, int]:
     width = interval[1] - interval[0]
@@ -609,7 +627,7 @@ POLICY_CANARY_VALUE_STABILITY_VALIDATION_SPECS = tuple(
     replace(
         POLICY_CANARY_VALIDATION_SPECS[0],
         scenario_id=(
-            f"npz_canary_value_stability_{family}_{variant['suffix']}"
+            f"npz_canary_value_stability_{family}_{label_suffix}"
         ),
         seed=seed_base + variant_index,
         scenario_group=family,
@@ -624,8 +642,14 @@ POLICY_CANARY_VALUE_STABILITY_VALIDATION_SPECS = tuple(
         risk_region=_shift_region(variant["risk_region"], offset[0], offset[1]),
         blocked_rects=_shift_rects(variant["blocked_rects"], offset[0], offset[1]),
     )
-    for family, contrast_focus, seed_base, offset in _POLICY_CANARY_VALUE_STABILITY_FAMILIES
-    for variant_index, variant in enumerate(_POLICY_CANARY_VALUE_STABILITY_VARIANTS)
+    for family, contrast_focus, seed_base, offset, template_suffixes in _POLICY_CANARY_VALUE_STABILITY_FAMILIES
+    for variant_index, template_suffix in enumerate(template_suffixes)
+    for label_suffix, variant in (
+        (
+            chr(ord("a") + variant_index),
+            _POLICY_CANARY_VALUE_STABILITY_VARIANTS_BY_SUFFIX[template_suffix],
+        ),
+    )
 )
 
 
