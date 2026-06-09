@@ -443,6 +443,29 @@ POLICY_CANARY_DIVERSITY_VALIDATION_SPECS = (
     ),
 )
 
+_POLICY_CANARY_OPPORTUNITY_QUALITY_FAMILIES = (
+    ("mixed_stress_detour", "safe_alternative_policy_choice", (9504, 9605)),
+    ("near_blocked_safe_alt", "near_blocked_safe_alternative", (9606, 9607)),
+    ("channel_contrast", "channel_quality_safe_alternative", (9608, 9609)),
+    ("high_risk_tradeoff", "high_risk_safe_tradeoff", (9610, 9611)),
+    ("dense_choke_safe_bypass", "dense_choke_safe_bypass", (9612, 9613)),
+    ("path_complexity_benefit", "path_complexity_safe_benefit", (9614, 9615)),
+)
+
+POLICY_CANARY_OPPORTUNITY_QUALITY_VALIDATION_SPECS = tuple(
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id=f"npz_canary_opportunity_quality_{family}_{variant}",
+        seed=seeds[variant_index],
+        scenario_group=family,
+        contrast_focus=contrast_focus,
+    )
+    for family, contrast_focus, seeds in (
+        _POLICY_CANARY_OPPORTUNITY_QUALITY_FAMILIES
+    )
+    for variant_index, variant in enumerate(("a", "b"))
+)
+
 
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
@@ -453,6 +476,7 @@ SCENARIO_SETS = {
     "raw_align_test": RAW_ALIGN_TEST_VALIDATION_SPECS,
     "policy_canary": POLICY_CANARY_VALIDATION_SPECS,
     "policy_canary_diversity": POLICY_CANARY_DIVERSITY_VALIDATION_SPECS,
+    "policy_canary_opportunity_quality": POLICY_CANARY_OPPORTUNITY_QUALITY_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -569,7 +593,8 @@ def parse_args() -> argparse.Namespace:
         default="smoke",
         help=(
             "选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、"
-            "raw_align_val、raw_align_test、policy_canary、policy_canary_diversity 或 all。"
+            "raw_align_val、raw_align_test、policy_canary、policy_canary_diversity、"
+            "policy_canary_opportunity_quality 或 all。"
         ),
     )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
