@@ -28,6 +28,23 @@ from run_confidence_ablation import (
     rank_exploration_goals,
 )
 
+CANARY_SAFE_ALTERNATIVE_GROUPS = {
+    "mixed_stress",
+    "mixed_stress_detour",
+    "near_blocked_safe_alt",
+    "high_risk_tradeoff",
+    "dense_choke_safe_bypass",
+    "path_complexity_benefit",
+}
+CANARY_SAFE_ALTERNATIVE_CONTRAST_FOCUS = {
+    "safe_alternative_policy_choice",
+    "near_blocked_safe_alternative",
+    "high_risk_safe_tradeoff",
+    "dense_choke_safe_bypass",
+    "channel_quality_safe_alternative",
+    "path_complexity_safe_benefit",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -101,7 +118,14 @@ def main() -> None:
             constraints,
             start=scenario.start_cell,
             platform=platform,
-            max_candidates=(grid.width * grid.height if scenario.scenario_group == "mixed_stress" else 12),
+            max_candidates=(
+                grid.width * grid.height
+                if _uses_canary_safe_alternative_export(
+                    scenario.scenario_group,
+                    getattr(scenario, "contrast_focus", None),
+                )
+                else 12
+            ),
             lookahead_steps=scenario.lookahead_steps,
             use_simple_occlusion=scenario.use_simple_occlusion,
         )
@@ -109,6 +133,7 @@ def main() -> None:
             rank_exploration_goals(candidates),
             scenario_group=scenario.scenario_group,
             top_k=max(args.top_k, 0),
+            contrast_focus=getattr(scenario, "contrast_focus", None),
             passable_mask=constraints.passable_mask,
         )
         goal_sequences = evaluate_goal_sequences(candidates, depth=3, beam_width=max(args.top_k, 1))[
@@ -147,11 +172,18 @@ def main() -> None:
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
-def _select_scored_goals_for_export(scored_goals, *, scenario_group: str, top_k: int, passable_mask=None):
+def _select_scored_goals_for_export(
+    scored_goals,
+    *,
+    scenario_group: str,
+    top_k: int,
+    contrast_focus: str | None = None,
+    passable_mask=None,
+):
     if top_k <= 0:
         return tuple()
     selected = list(scored_goals[:top_k])
-    if scenario_group != "mixed_stress" or not selected:
+    if not _uses_canary_safe_alternative_export(scenario_group, contrast_focus) or not selected:
         return tuple(selected)
 
     safe_reachable = next(
@@ -194,6 +226,15 @@ def _select_scored_goals_for_export(scored_goals, *, scenario_group: str, top_k:
             seen.add(cell)
             deduped.append(goal)
     return tuple(deduped[:top_k])
+
+
+def _uses_canary_safe_alternative_export(
+    scenario_group: str,
+    contrast_focus: str | None = None,
+) -> bool:
+    if str(scenario_group) in CANARY_SAFE_ALTERNATIVE_GROUPS:
+        return True
+    return str(contrast_focus or "") in CANARY_SAFE_ALTERNATIVE_CONTRAST_FOCUS
 
 
 def _clearance_cells(passable_mask, cell) -> int:

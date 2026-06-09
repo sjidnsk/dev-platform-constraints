@@ -398,6 +398,51 @@ POLICY_CANARY_VALIDATION_SPECS = (
     ),
 )
 
+POLICY_CANARY_DIVERSITY_VALIDATION_SPECS = (
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id="npz_canary_mixed_stress_detour_v2",
+        seed=9504,
+        scenario_group="mixed_stress_detour",
+        contrast_focus="safe_alternative_policy_choice",
+    ),
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id="npz_canary_near_blocked_safe_alt",
+        seed=9505,
+        scenario_group="near_blocked_safe_alt",
+        contrast_focus="near_blocked_safe_alternative",
+    ),
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id="npz_canary_high_risk_tradeoff",
+        seed=9506,
+        scenario_group="high_risk_tradeoff",
+        contrast_focus="high_risk_safe_tradeoff",
+    ),
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id="npz_canary_dense_choke_safe_bypass",
+        seed=9507,
+        scenario_group="dense_choke_safe_bypass",
+        contrast_focus="dense_choke_safe_bypass",
+    ),
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id="npz_canary_channel_contrast",
+        seed=9508,
+        scenario_group="channel_contrast",
+        contrast_focus="channel_quality_safe_alternative",
+    ),
+    replace(
+        POLICY_CANARY_VALIDATION_SPECS[0],
+        scenario_id="npz_canary_path_complexity_benefit",
+        seed=9509,
+        scenario_group="path_complexity_benefit",
+        contrast_focus="path_complexity_safe_benefit",
+    ),
+)
+
 
 SCENARIO_SETS = {
     "smoke": SMOKE_VALIDATION_SPECS,
@@ -407,6 +452,7 @@ SCENARIO_SETS = {
     "raw_align_val": RAW_ALIGN_VAL_VALIDATION_SPECS,
     "raw_align_test": RAW_ALIGN_TEST_VALIDATION_SPECS,
     "policy_canary": POLICY_CANARY_VALIDATION_SPECS,
+    "policy_canary_diversity": POLICY_CANARY_DIVERSITY_VALIDATION_SPECS,
     "all": SMOKE_VALIDATION_SPECS + STRESS_VALIDATION_SPECS,
 }
 VALIDATION_SPECS = SMOKE_VALIDATION_SPECS
@@ -523,7 +569,7 @@ def parse_args() -> argparse.Namespace:
         default="smoke",
         help=(
             "选择要生成的验证场景集：smoke、stress、holdout、raw_align_train、"
-            "raw_align_val、raw_align_test、policy_canary 或 all。"
+            "raw_align_val、raw_align_test、policy_canary、policy_canary_diversity 或 all。"
         ),
     )
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的地图和场景，不写文件。")
