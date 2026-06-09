@@ -31,6 +31,7 @@ class ValidationMapSpec:
     scenario_group: str = "smoke"
     contrast_focus: str | None = None
     scenario_variant_id: str | None = None
+    multi_step_seed_variant: bool = False
 
     @property
     def filename(self) -> str:
@@ -654,13 +655,19 @@ POLICY_CANARY_VALUE_STABILITY_VALIDATION_SPECS = tuple(
 )
 
 _POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_FAMILIES = (
-    ("mixed_stress_detour", "safe_alternative_policy_choice", 9900, (0, 0), ("c", "e", "b", "f", "d", "a")),
-    ("near_blocked_safe_alt", "near_blocked_safe_alternative", 9910, (1, 0), ("f", "c", "b", "e", "d", "a")),
+    ("mixed_stress_detour", "safe_alternative_policy_choice", 9900, (0, 1), ("base", "c", "e", "b", "f", "d")),
+    ("near_blocked_safe_alt", "near_blocked_safe_alternative", 9910, (1, 1), ("base", "c", "e", "b", "f", "d")),
     ("high_risk_tradeoff", "high_risk_safe_tradeoff", 9920, (0, 1), ("base", "c", "e", "b", "f", "d")),
-    ("dense_choke_safe_bypass", "dense_choke_safe_bypass", 9930, (-1, 0), ("c", "e", "b", "f", "d", "a")),
-    ("channel_contrast", "channel_quality_safe_alternative", 9940, (1, 1), ("d", "c", "f", "e", "b", "a")),
-    ("path_complexity_benefit", "path_complexity_safe_benefit", 9950, (-1, 1), ("a", "d", "f", "c", "e", "b")),
+    ("dense_choke_safe_bypass", "dense_choke_safe_bypass", 9930, (-1, 1), ("f", "f", "f", "f", "f", "d")),
+    ("channel_contrast", "channel_quality_safe_alternative", 9940, (0, 1), ("base", "c", "e", "b", "f", "d")),
+    ("path_complexity_benefit", "path_complexity_safe_benefit", 9950, (0, 1), ("base", "c", "e", "b", "f", "d")),
 )
+
+
+def _sequential_multi_step_shift_index(family: str, variant_index: int) -> int:
+    if family == "dense_choke_safe_bypass" and variant_index in {1, 2}:
+        return 4
+    return variant_index
 
 
 POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_VALIDATION_SPECS = tuple(
@@ -674,28 +681,30 @@ POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_VALIDATION_SPECS = tuple(
         contrast_focus=contrast_focus,
         low_confidence_band=_shift_interval(
             variant["low_confidence_band"],
-            offset[0] + (variant_index % 3) - 1,
+            offset[0] + (shift_index % 3) - 1,
             lower=0,
             upper=26,
         ),
         value_region=_shift_region(
             variant["value_region"],
-            offset[0] + (variant_index % 3) - 1,
-            offset[1] + (variant_index % 2),
+            offset[0] + (shift_index % 3) - 1,
+            offset[1] + (shift_index % 2),
         ),
         risk_region=_shift_region(
             variant["risk_region"],
             offset[0],
-            offset[1] + ((variant_index + 1) % 2),
+            offset[1] + ((shift_index + 1) % 2),
         ),
         blocked_rects=_shift_rects(
             variant["blocked_rects"],
-            offset[0] + (variant_index % 2),
+            offset[0] + (shift_index % 2),
             offset[1],
         ),
+        multi_step_seed_variant=variant_index < 2,
     )
     for family, contrast_focus, seed_base, offset, template_suffixes in _POLICY_CANARY_SEQUENTIAL_MULTI_STEP_OPPORTUNITY_FAMILIES
     for variant_index, template_suffix in enumerate(template_suffixes)
+    for shift_index in (_sequential_multi_step_shift_index(family, variant_index),)
     for label_suffix, variant in (
         (
             chr(ord("a") + variant_index),
@@ -805,6 +814,8 @@ def _scenario_entry(spec: ValidationMapSpec, map_path: Path) -> dict[str, object
         scenario["blocked_rects"] = [list(rect) for rect in spec.blocked_rects]
     if spec.contrast_focus is not None:
         scenario["contrast_focus"] = spec.contrast_focus
+    if spec.multi_step_seed_variant:
+        scenario["multi_step_seed_variant"] = True
     return scenario
 
 

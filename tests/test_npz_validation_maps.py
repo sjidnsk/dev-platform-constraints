@@ -224,6 +224,7 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         scenarios = json.loads(scenario_config.read_text(encoding="utf-8"))["scenarios"]
         self.assertEqual(len(scenarios), 36)
         families = {}
+        seed_variants = {}
         scenario_ids = set()
         seeds = set()
         variants = set()
@@ -240,6 +241,8 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
                     tuple(tuple(rect) for rect in scenario.get("blocked_rects", [])),
                 )
             )
+            if scenario.get("multi_step_seed_variant"):
+                seed_variants[scenario["scenario_group"]] = seed_variants.get(scenario["scenario_group"], 0) + 1
         self.assertEqual(
             families,
             {
@@ -282,6 +285,7 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         scenarios = json.loads(scenario_config.read_text(encoding="utf-8"))["scenarios"]
         self.assertEqual(len(scenarios), 36)
         families = {}
+        seed_variants = {}
         scenario_ids = set()
         seeds = set()
         variants = set()
@@ -301,6 +305,8 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
                     tuple(tuple(rect) for rect in scenario.get("blocked_rects", [])),
                 )
             )
+            if scenario.get("multi_step_seed_variant"):
+                seed_variants[scenario["scenario_group"]] = seed_variants.get(scenario["scenario_group"], 0) + 1
         self.assertEqual(
             families,
             {
@@ -316,6 +322,17 @@ class NpzValidationMapGenerationTests(unittest.TestCase):
         self.assertEqual(len(seeds), 36)
         self.assertEqual(len(variants), 36)
         self.assertGreaterEqual(len(geometry_signatures), 12)
+        self.assertEqual(
+            seed_variants,
+            {
+                "mixed_stress_detour": 2,
+                "near_blocked_safe_alt": 2,
+                "high_risk_tradeoff": 2,
+                "dense_choke_safe_bypass": 2,
+                "channel_contrast": 2,
+                "path_complexity_benefit": 2,
+            },
+        )
 
     def test_explicit_scenario_spec_overrides_start_cell_and_identity(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
