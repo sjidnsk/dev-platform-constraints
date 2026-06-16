@@ -72,18 +72,18 @@ PowerShell：
 
 ```powershell
 .\scripts\setup_env.ps1 -RunValidation
-conda activate D:\conda_envs\lunar-explorer
+conda activate lunar-explorer
 ```
 
 Ubuntu Bash：
 
 ```bash
 bash scripts/setup_env.sh --run-validation
-conda activate D:/conda_envs/lunar-explorer
+conda activate lunar-explorer
 ```
 
 部署脚本会使用 `environment.yml` 创建或更新 Python 3.12 Conda 环境，
-默认环境路径为 `D:\conda_envs\lunar-explorer`。脚本会对已有环境显式执行
+默认环境名为 `lunar-explorer`。脚本会对已有环境显式执行
 `python=3.12` 约束校验，但不会以 editable 模式安装本仓库；验证命令通过
 `PYTHONPATH=src` 读取当前源码。
 可以使用 dry-run 模式只查看将执行的命令：
